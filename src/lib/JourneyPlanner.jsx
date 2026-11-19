@@ -48,7 +48,8 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
  async function resolveEndpoint(value){
   if(value?.id)return value;
   let point=value?.lat!=null?value:null;
-  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&!currentLocation)throw new Error("Tap the location button and allow location access, or enter a starting place.");\n  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
+  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&!currentLocation)throw new Error("Tap the location button and allow location access, or enter a starting place.");
+  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
   if(!point){const places=await geocodeIndia(String(value?.name||value||"").trim(),1);point=places[0]}
   if(!point)throw new Error("Could not find "+(value?.name||value)+". Choose a suggestion and try again.");
   const dLat=15/111.32,dLng=15/(111.32*Math.max(.2,Math.cos(point.lat*Math.PI/180)));
