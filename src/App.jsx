@@ -2,7 +2,8 @@ import React,{useEffect,useMemo,useState} from "react";
 import {Activity,ArrowLeft,ArrowRight,ArrowUpRight,Bike,Bus,CarFront,Clock3,Compass,LocateFixed,MapPin,Menu,Navigation,RefreshCw,Search,ShieldCheck,Ship,Sparkles,Train,TrainFront,Wallet,X,Map as MapIcon,AlertCircle} from "lucide-react";
 import {hasSupabase,supabase} from "./lib/supabase";
 import ConnectedNetwork from "./lib/ConnectedNetwork.jsx";
-import JourneyPlanner from "./lib/JourneyPlanner.jsx";\nimport NearbyMap from "./lib/NearbyMap.jsx";
+import JourneyPlanner from "./lib/JourneyPlanner.jsx";
+import NearbyMap from "./lib/NearbyMap.jsx";
 
 const PAGES=[
 {id:"home",label:"Home",icon:Activity},{id:"planner",label:"Plan",icon:Navigation},
