@@ -206,3 +206,9 @@ body{color:#2C365A!important}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#F8F5F0;color:#2C365A}
 .leaflet-popup-content{font-size:11px;line-height:1.55}
 @media(max-width:600px){.mumove-map-section{padding:9px;margin:13px 0}.mumove-live-map{height:270px}.mumove-map-heading{align-items:flex-start}}
+
+.home-map-live{margin:18px 0}
+.home-map-live .mumove-map-section{margin:0}
+.home-map-live .mumove-live-map{height:220px}
+.home-map-explore{width:100%;justify-content:center;margin-top:9px}
+@media(max-width:600px){.home-map-live .mumove-live-map{height:205px}}
