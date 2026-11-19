@@ -41,13 +41,35 @@ function getStaticGuide(from,to){
  return null;
 }
 function estimateFare(fareRows){return fareRows?.length?"₹"+Math.min(...fareRows.map(x=>Number(x.price))).toFixed(2):"Not published in feed"}
-export default function JourneyPlanner(){
- const [from,setFrom]=useState(""),[to,setTo]=useState(""),[origin,setOrigin]=useState(null),[dest,setDest]=useState(null),[journeys,setJourneys]=useState([]),[guide,setGuide]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[dataInfo,setDataInfo]=useState("");
+export default function JourneyPlanner({initialOrigin="",initialDestination="",currentLocation=null}){
+ const [from,setFrom]=useState(initialOrigin),[to,setTo]=useState(initialDestination),[origin,setOrigin]=useState(null),[dest,setDest]=useState(null),[journeys,setJourneys]=useState([]),[guide,setGuide]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[dataInfo,setDataInfo]=useState(""),[locationBusy,setLocationBusy]=useState(false);
+ useEffect(()=>{if(initialOrigin){setFrom(initialOrigin);setOrigin(null)}},[initialOrigin]);
+ useEffect(()=>{if(initialDestination){setTo(initialDestination);setDest(null)}},[initialDestination]);
+ async function resolveEndpoint(value){
+  if(value?.id)return value;
+  let point=value?.lat!=null?value:null;
+  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
+  if(!point){const places=await geocodeIndia(String(value?.name||value||"").trim(),1);point=places[0]}
+  if(!point)throw new Error("Could not find "+(value?.name||value)+". Choose a suggestion and try again.");
+  const dLat=15/111.32,dLng=15/(111.32*Math.max(.2,Math.cos(point.lat*Math.PI/180)));
+  const {data,error}=await supabase.from("transport_stops").select("id,name,stop_type,operator_id,latitude,longitude").gte("latitude",point.lat-dLat).lte("latitude",point.lat+dLat).gte("longitude",point.lng-dLng).lte("longitude",point.lng+dLng).limit(1000);
+  if(error)throw error;
+  const nearest=(data||[]).map(s=>({...s,lat:Number(s.latitude),lng:Number(s.longitude),distance:Math.hypot((Number(s.latitude)-point.lat)*111.32,(Number(s.longitude)-point.lng)*111.32*Math.cos(point.lat*Math.PI/180))})).filter(s=>Number.isFinite(s.distance)).sort((x,y)=>x.distance-y.distance)[0];
+  if(!nearest||nearest.distance>15)throw new Error("No imported MUMOVE transport stop was found within 15 km of "+(point.name||"this place")+". Place search works across India, but route data is currently limited to imported coverage areas.");
+  return {...nearest,name:nearest.name,matchedFrom:point.name||value?.name||value,distance:nearest.distance};
+ }
+ function useCurrentLocation(){
+  if(!navigator.geolocation){setError("Location is not supported by this browser.");return}
+  setLocationBusy(true);navigator.geolocation.getCurrentPosition(p=>{const point={lat:p.coords.latitude,lng:p.coords.longitude,name:"My location"};setOrigin(point);setFrom("My location");setLocationBusy(false)},e=>{setError(e.code===1?"Allow location permission in your browser settings.":"Could not get your location. Turn on GPS and retry.");setLocationBusy(false)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});
+ }
  async function plan(){
   if(!hasSupabase){setError("Connect the MUMOVE Supabase project to search imported routes.");return}
-  if(!origin||!dest){setError("Choose both origin and destination from the database suggestions.");return}
+  if(!from.trim()||!to.trim()){setError("Enter both a starting point and destination.");return}
   setBusy(true);setError("");setJourneys([]);setGuide(null);setDataInfo("");
   try{
+   const [originStop,destStop]=await Promise.all([resolveEndpoint(origin||from),resolveEndpoint(dest||to)]);
+   setOrigin(originStop);setDest(destStop);setFrom(originStop.name);setTo(destStop.name);
+
    const [a,b]=await Promise.all([
     supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",originStop.id).limit(300),
     supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",destStop.id).limit(300)
@@ -102,7 +124,7 @@ export default function JourneyPlanner(){
  <StopPicker label="FROM" value={from} onChange={v=>{setFrom(v);setOrigin(null)}} onSelect={s=>{setOrigin(s);setFrom(s.name)}} onUseLocation={useCurrentLocation} locationBusy={locationBusy} placeholder="Search any place in India"/>
  <StopPicker label="TO" value={to} onChange={v=>{setTo(v);setDest(null)}} onSelect={s=>{setDest(s);setTo(s.name)}} onUseLocation={()=>{}} placeholder="Search destination anywhere in India"/>
  <button className="button primary full" onClick={plan} disabled={busy||!origin||!dest}>{busy?<RefreshCw className="spin" size={16}/>:<Navigation size={16}/>} Find journeys</button>
- {error&&<div className="notice">{error}</div>}{origin?.matchedFrom&&<div className="planner-note">Nearest imported stop to {origin.matchedFrom}: {origin.name} ({origin.distance.toFixed(1)} km away).</div>}{dest?.matchedFrom&&<div className="planner-note">Nearest imported stop to {dest.matchedFrom}: {dest.name} ({dest.distance.toFixed(1)} km away).</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
+ {error&&<div className="notice">{error}</div>}{origin?.matchedFrom&&<div className="planner-note">Nearest imported stop to {origin.matchedFrom}: {origin.name} ({origin.distance.toFixed(1)} km away).</div>}{dest?.matchedFrom&&<div className="planner-note">Nearest imported stop to {dest.matchedFrom}: {dest.name} ({dest.distance.toFixed(1)} km away).</div>}{origin?.matchedFrom&&<div className="planner-note">Nearest imported stop to {origin.matchedFrom}: {origin.name} ({origin.distance.toFixed(1)} km away).</div>}{dest?.matchedFrom&&<div className="planner-note">Nearest imported stop to {dest.matchedFrom}: {dest.name} ({dest.distance.toFixed(1)} km away).</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
  {journeys.map((j,i)=><article className="journey-result" key={i}><div className="journey-top"><b>{j.transfers===0?"Direct journey":"1 transfer"}</b><span><Clock3 size={14}/> ~{j.minutes} min</span></div>{j.legs.map((l,n)=><div className="journey-leg" key={n}><span className="row-icon">{l.route.mode==="bus"?<Bus size={18}/>:<Train size={18}/>}</span><div><b>{modeName[l.route.mode]} · {l.route.route_short_name||l.route.route_long_name}</b><small>{l.from} → {l.to}</small></div></div>)}<div className="journey-foot"><span><Wallet size={14}/> {j.fare}</span><small>Fare shown only when GTFS publishes it</small></div></article>)}
  {!journeys.length&&!dataInfo&&<div className="planner-note">Import the public Mumbai GTFS schedule first. Timetables, live arrivals and operator fares are shown only when the source publishes them.</div>}
  </div><AITravelAssistant/></>
