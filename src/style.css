@@ -182,3 +182,27 @@ body{color:#2C365A!important}
  .planner-panel .journey-foot{align-items:flex-start;gap:7px}
  .planner-panel .journey-foot small{text-align:left}
 }
+
+
+/* Phase 1.3 — interactive map in the warm MUMOVE palette */
+.mumove-map-section{margin:16px 0 19px;padding:12px;background:#F8F5F0;border:1px solid #D5CDC2;border-radius:17px}
+.mumove-map-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}
+.mumove-map-heading b,.mumove-map-heading small{display:block}
+.mumove-map-heading b{font-size:12px;color:#2C365A}
+.mumove-map-heading small{font-size:9px;color:#77766F;margin-top:4px}
+.mumove-map-key{display:flex;align-items:center;gap:6px;color:#77766F;font-size:9px;white-space:nowrap}
+.mumove-map-key i{width:9px;height:9px;border-radius:50%;background:#65745F;display:inline-block}
+.mumove-live-map{height:310px;border-radius:12px;overflow:hidden;background:#EEE8DF;isolation:isolate}
+.mumove-live-map .leaflet-container{height:100%;width:100%;font-family:inherit;background:#EEE8DF}
+.mumove-live-map .leaflet-control-zoom a{color:#2C365A;border-color:#D5CDC2}
+.mumove-live-map .leaflet-control-attribution{font-size:8px;background:#F8F5F0dd;color:#77766F}
+.mumove-live-map .leaflet-control-attribution a{color:#2C365A}
+.mumove-map-marker-wrap,.mumove-map-user-wrap{background:transparent;border:0}
+.mumove-map-marker{display:grid;place-items:center;width:26px;height:26px;border:3px solid #F8F5F0;border-radius:50% 50% 50% 4px;background:#65745F;transform:rotate(-45deg);box-shadow:0 2px 8px #2C365A35}
+.mumove-map-marker i{width:6px;height:6px;border-radius:50%;background:#fff}
+.mumove-map-user{display:grid;place-items:center;width:28px;height:28px;border:3px solid #F8F5F0;border-radius:50%;background:#2C365A;box-shadow:0 0 0 6px #2C365A28}
+.mumove-map-user i{width:7px;height:7px;border-radius:50%;background:#fff}
+.mumove-map-disclaimer{font-size:8px;line-height:1.5;color:#77766F;margin:9px 2px 1px}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#F8F5F0;color:#2C365A}
+.leaflet-popup-content{font-size:11px;line-height:1.55}
+@media(max-width:600px){.mumove-map-section{padding:9px;margin:13px 0}.mumove-live-map{height:270px}.mumove-map-heading{align-items:flex-start}}
