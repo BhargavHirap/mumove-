@@ -1,0 +1,10 @@
+{
+  "name": "MUMOVE Mumbai Mobility",
+  "short_name": "MUMOVE",
+  "description": "Community-powered mobility updates for Mumbai.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f0",
+  "theme_color": "#101a18",
+  "icons": []
+}
