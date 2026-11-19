@@ -48,6 +48,12 @@ export default function App() {
   const [locationState,setLocationState]=useState("Use my location");
   const [activeMode,setActiveMode]=useState("all");
   const [aiQuestion,setAiQuestion]=useState("");
+  const [liveRoute,setLiveRoute]=useState(null);
+  const [routeStatus,setRouteStatus]=useState("Calculating road route…");
+  const [nearbyStops,setNearbyStops]=useState([]);
+  const [nearbyStatus,setNearbyStatus]=useState("Find your location to discover nearby transport");
+  const [weather,setWeather]=useState(null);
+  const [weatherStatus,setWeatherStatus]=useState("Weather not loaded");
 
   useEffect(()=>{localStorage.setItem("mumove-reports",JSON.stringify(reports));},[reports]);
   useEffect(()=>{
@@ -62,12 +68,37 @@ export default function App() {
   const currentStation=stations.find(s=>s.name.startsWith(station))||stations[0];
   const latestFor=category=>reports.filter(r=>r.station===station&&r.category===category).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
   const from=origin==="My location"&&location?location:(places.find(p=>p.name===origin)||places[0]), to=places.find(p=>p.name===destination)||places[7];
-  const km=distanceKm(from,to)*1.22;
+  const km=liveRoute?.distanceKm ?? distanceKm(from,to)*1.22;
+  useEffect(()=>{
+    let cancelled=false;
+    const loadRoute=async()=>{
+      setRouteStatus("Checking road route…");
+      try{
+        const url="https://router.project-osrm.org/route/v1/driving/"+from.lng+","+from.lat+";"+to.lng+","+to.lat+"?overview=false&alternatives=true&steps=false";
+        const response=await fetch(url); if(!response.ok)throw new Error("Routing service unavailable");
+        const json=await response.json(); if(!json.routes?.length)throw new Error("No road route found");
+        if(!cancelled){const r=json.routes[0];setLiveRoute({distanceKm:r.distance/1000,durationMin:Math.round(r.duration/60)});setRouteStatus("Road route calculated · OSRM");}
+      }catch{if(!cancelled){setLiveRoute(null);setRouteStatus("Using straight-line distance estimate");}}
+    };
+    loadRoute(); return()=>{cancelled=true;};
+  },[from.lat,from.lng,to.lat,to.lng]);
+  useEffect(()=>{
+    if(!location)return;
+    let cancelled=false;
+    const loadNearby=async()=>{
+      setNearbyStatus("Searching nearby public transport…");
+      const q="[out:json][timeout:20];(node(around:1200,"+location.lat+","+location.lng+")[public_transport];way(around:1200,"+location.lat+","+location.lng+")[public_transport];node(around:1200,"+location.lat+","+location.lng+")[highway=bus_stop];node(around:1200,"+location.lat+","+location.lng+")[railway=station];);out center tags;";
+      try{const res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},body:"data="+encodeURIComponent(q)});if(!res.ok)throw new Error("Nearby data unavailable");const data=await res.json();const items=(data.elements||[]).map(x=>({id:x.id,name:x.tags?.name||x.tags?.["name:en"]||x.tags?.highway||x.tags?.railway||"Transport stop",type:x.tags?.railway==="station"?"Rail station":x.tags?.highway==="bus_stop"?"Bus stop":x.tags?.public_transport==="platform"?"Transit platform":"Public transport",lat:x.lat??x.center?.lat,lng:x.lon??x.center?.lon})).filter(x=>x.lat&&x.lng).slice(0,18);if(!cancelled){setNearbyStops(items);setNearbyStatus(items.length?items.length+" mapped stops and stations found within 1.2 km · OpenStreetMap":"No mapped stops found nearby");}}
+      catch{if(!cancelled)setNearbyStatus("Nearby transport lookup temporarily unavailable");}
+    };
+    const loadWeather=async()=>{try{const res=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+location.lat+"&longitude="+location.lng+"&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=auto");if(!res.ok)throw new Error();const j=await res.json();if(!cancelled){setWeather(j.current);setWeatherStatus("Current conditions · Open-Meteo");}}catch{if(!cancelled)setWeatherStatus("Weather unavailable");}};
+    loadNearby();loadWeather();return()=>{cancelled=true;};
+  },[location?.lat,location?.lng]);
   const routes=[
-    {id:"train",name:"Train + walk",detail:"Public transport · indicative",icon:TrainFront,fare:Math.max(5,Math.round(km*1.15/5)*5),time:Math.max(12,Math.round(km*3.2+10)),tag:"Budget friendly"},
-    {id:"bus",name:"Bus",detail:"City bus · route availability varies",icon:Bus,fare:Math.max(10,Math.round(km*2.4/5)*5),time:Math.max(18,Math.round(km*5.2+12)),tag:"Low cost"},
-    {id:"auto",name:"Auto rickshaw",detail:"Meter / local fare rules apply",icon:Bike,fare:Math.max(23,Math.round((km*23+23)/5)*5),time:Math.max(10,Math.round(km*3.4+7)),tag:"Direct ride"},
-    {id:"cab",name:"App cab",detail:"Operator quote required for live price",icon:CarFront,fare:Math.max(80,Math.round((km*28+75)/10)*10),time:Math.max(10,Math.round(km*3+8)),tag:"Door to door"}
+    {id:"train",name:"Train + walk",detail:"Public transport · indicative",icon:TrainFront,fare:Math.max(5,Math.round(km*1.15/5)*5),time:liveRoute?.durationMin ? Math.max(8,Math.round(liveRoute.durationMin+5)) : Math.max(12,Math.round(km*3.2+10)),tag:"Budget friendly"},
+    {id:"bus",name:"Bus",detail:"City bus · route availability varies",icon:Bus,fare:Math.max(10,Math.round(km*2.4/5)*5),time:liveRoute?.durationMin ? Math.max(12,Math.round(liveRoute.durationMin*1.45+8)) : Math.max(18,Math.round(km*5.2+12)),tag:"Low cost"},
+    {id:"auto",name:"Auto rickshaw",detail:"Meter / local fare rules apply",icon:Bike,fare:Math.max(23,Math.round((km*23+23)/5)*5),time:liveRoute?.durationMin ? Math.max(8,Math.round(liveRoute.durationMin+4)) : Math.max(10,Math.round(km*3.4+7)),tag:"Direct ride"},
+    {id:"cab",name:"App cab",detail:"Operator quote required for live price",icon:CarFront,fare:Math.max(80,Math.round((km*28+75)/10)*10),time:liveRoute?.durationMin ? Math.max(8,Math.round(liveRoute.durationMin)) : Math.max(10,Math.round(km*3+8)),tag:"Door to door"}
   ];
   const shownRoutes=routes.filter(r=>activeMode==="all"||r.id===activeMode);
   function useMyLocation(){if(!navigator.geolocation){setLocationState("Location not supported");return;}setLocationState("Finding location…");navigator.geolocation.getCurrentPosition(pos=>{const p={lat:pos.coords.latitude,lng:pos.coords.longitude};setLocation(p);setOrigin("My location");setLocationState("Location found");},()=>setLocationState("Location permission needed"),{enableHighAccuracy:true,timeout:10000});}
@@ -92,7 +123,7 @@ export default function App() {
         </div>
       </section>
 
-      <section className="results-section" id="route-results"><div className="section-heading"><div><div className="eyebrow">YOUR ROUTE OPTIONS</div><h2>{origin==="My location"?"Your location":origin} <span className="route-arrow">→</span> {destination}</h2><p>Approx. {km.toFixed(1)} km by road · compare before you leave</p></div><span className="estimate-chip">ESTIMATES ONLY</span></div>
+      <section className="results-section" id="route-results"><div className="section-heading"><div><div className="eyebrow">YOUR ROUTE OPTIONS</div><h2>{origin==="My location"?"Your location":origin} <span className="route-arrow">→</span> {destination}</h2><p>Approx. {km.toFixed(1)} km · {routeStatus} · compare before you leave</p></div><span className="estimate-chip">ESTIMATES ONLY</span></div>
         <div className="mode-filters">{[{id:"all",label:"All options"},{id:"train",label:"Train"},{id:"bus",label:"Bus"},{id:"auto",label:"Auto"},{id:"cab",label:"Cab"}].map(m=><button key={m.id} className={activeMode===m.id?"chosen":""} onClick={()=>setActiveMode(m.id)}>{m.label}</button>)}</div>
         <div className="route-grid">{shownRoutes.map((r,i)=>{const Icon=r.icon;return <article className={"route-card "+(i===0?"recommended":"")} key={r.id}>{i===0&&activeMode==="all"&&<span className="recommend-label"><Sparkles size={12}/> LOWEST ESTIMATE</span>}<div className="route-icon"><Icon size={21}/></div><div className="route-title"><h3>{r.name}</h3><span>{r.detail}</span></div><div className="route-stats"><div><small>EST. FARE</small><b>{money(r.fare)}</b></div><div><small>EST. TIME</small><b>{r.time} min</b></div></div><div className="route-foot"><span>{r.tag}</span><span className="not-live">Indicative · not live</span></div></article>;})}</div>
         <p className="fine-print">Actual fares, routes and journey times vary by operator, traffic, time of day and local fare rules. Train/bus availability and app-cab quotes are not connected yet.</p>
@@ -100,6 +131,7 @@ export default function App() {
 
       <section className="feature-strip"><div><span><Train size={18}/></span><b>Rail & metro</b><small>Schedules and service data integration planned</small></div><div><span><Bus size={18}/></span><b>City buses</b><small>Routes, stops and operator feeds planned</small></div><div><span><Bike size={18}/></span><b>Auto & taxi</b><small>Fare intelligence and booking partners planned</small></div><div><span><Plane size={18}/></span><b>Travel beyond</b><small>Airport, intercity and global expansion</small></div></section>
 
+      <section className="live-data-strip"><div className="live-data-heading"><div className="eyebrow">LIVE CONTEXT</div><h2>Your surroundings, at a glance.</h2><p>Live weather and mapped transport discovery use public data sources. Stop locations are mapped data, not vehicle tracking.</p></div><div className="live-data-cards"><article><span className="live-data-icon"><CloudRain size={19}/></span><div><small>LOCAL WEATHER</small><b>{weather?Math.round(weather.temperature_2m)+"°C · "+weather.precipitation+" mm rain":"Waiting for location"}</b><em>{weatherStatus}</em></div></article><article><span className="live-data-icon"><Navigation size={19}/></span><div><small>NEARBY TRANSPORT</small><b>{nearbyStops.length?nearbyStops.length+" mapped places":"Location needed"}</b><em>{nearbyStatus}</em></div></article></div>{nearbyStops.length>0&&<div className="nearby-list">{nearbyStops.slice(0,8).map(stop=><span key={stop.id}><MapPin size={13}/><b>{stop.name}</b><small>{stop.type}</small></span>)}</div>}</section>
       <section className="map-section" id="explore"><div className="section-heading"><div><div className="eyebrow">MUMBAI PILOT AREA</div><h2>Explore the ground reality.</h2><p>Station locations and commuter-submitted conditions. Not an official live transit feed.</p></div><div className="map-legend"><span><i className="legend-good"/> Clear</span><span><i className="legend-mid"/> Moderate</span><span><i className="legend-warn"/> Heavy / alert</span></div></div>
         <div className="map-layout"><div className="map-card"><MapContainer center={[19.075,72.843]} zoom={12} scrollWheelZoom={false} className="leaflet-map"><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>{places.map(p=><CircleMarker key={p.name} center={[p.lat,p.lng]} radius={p.name===origin||p.name===destination?10:6} pathOptions={{color:p.name===origin?"#2e7964":"#c18a48",fillColor:p.name===origin?"#2e7964":"#c18a48",fillOpacity:.8,weight:2}}><Popup><b>{p.name}</b><br/>Mapped pilot location</Popup></CircleMarker>)}{location&&<CircleMarker center={[location.lat,location.lng]} radius={9} pathOptions={{color:"#3b76b7",fillColor:"#3b76b7",fillOpacity:.8}}><Popup>Your current location</Popup></CircleMarker>}</MapContainer><div className="map-caption"><MapPin size={14}/> Mumbai · Western suburbs pilot <span>Map data © OpenStreetMap</span></div></div>
           <aside className="station-panel"><div className="panel-head"><div><small>SELECTED STATION</small><h3>{station}</h3><span>{currentStation.line}</span></div><ChevronDown size={18}/></div><div className="station-select">{stations.map(s=><button key={s.name} className={station===s.name?"selected":""} onClick={()=>setStation(s.name.replace(" Station",""))}>{s.name.replace(" Station","")}</button>)}</div><div className="condition-list">{categories.map(c=>{const Icon=c.icon,r=latestFor(c.id);return <div className="condition-row" key={c.id}><span className="condition-icon"><Icon size={17}/></span><span className="condition-name">{c.label}<small>{r?age(r.created_at):"No recent report"}</small></span><span className={`status ${r?statusClass(r.level):"unknown"}`}>{r?.level||"—"}</span></div>;})}</div><button className="outline-btn full" onClick={()=>setModal(true)}><Plus size={16}/> Share station update</button><p className="panel-note"><ShieldCheck size={14}/> Community reports are not official railway data.</p></aside></div>
