@@ -3,6 +3,7 @@ import {ArrowRight,Bus,Train,MapPin,Navigation,Search,Clock3,Wallet,RefreshCw} f
 import {hasSupabase,supabase} from "./supabase";
 import AITravelAssistant from "./AITravelAssistant.jsx";
 const modeName={bus:"Bus",suburban_rail:"Local train",metro:"Metro",ferry:"Ferry",other:"Transit"};
+const minsBetween=(start,end)=>{if(!start||!end)return null;const toMins=s=>{const [h,m,sec]=s.split(":").map(Number);return h*60+m+(sec||0)/60};let n=toMins(end)-toMins(start);if(n<0)n+=1440;return n>0&&n<360?Math.round(n):null};
 function StopPicker({label,value,onChange,onSelect,placeholder}){
  const [hits,setHits]=useState([]),[open,setOpen]=useState(false),[loading,setLoading]=useState(false);
  useEffect(()=>{if(value?.id||value.trim().length<2){setHits([]);return}const timer=setTimeout(async()=>{if(!hasSupabase)return;setLoading(true);const {data}=await supabase.rpc("mumove_search_stops",{search_term:value.trim(),result_limit:8});setHits(data||[]);setOpen(true);setLoading(false)},250);return()=>clearTimeout(timer)},[value]);
@@ -17,18 +18,18 @@ export default function JourneyPlanner(){
   setBusy(true);setError("");setJourneys([]);setDataInfo("");
   try{
    const [a,b]=await Promise.all([
-    supabase.from("trip_stop_times").select("trip_id,stop_sequence,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",origin.id).limit(300),
+    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",origin.id).limit(300),
     supabase.from("trip_stop_times").select("trip_id,stop_sequence,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",dest.id).limit(300)
    ]);
    if(a.error||b.error)throw new Error(a.error?.message||b.error?.message);
    const starts=a.data||[],ends=b.data||[],endByTrip=new Map(ends.map(x=>[x.trip_id,x]));
    const direct=starts.filter(x=>endByTrip.has(x.trip_id)&&endByTrip.get(x.trip_id).stop_sequence>x.stop_sequence).map(x=>({
-    legs:[{routeId:x.scheduled_trips.route_id,tripId:x.trip_id,from:origin.name,to:dest.name,stops:endByTrip.get(x.trip_id).stop_sequence-x.stop_sequence}],transfers:0
+    legs:[{routeId:x.scheduled_trips.route_id,tripId:x.trip_id,from:origin.name,to:dest.name,stops:endByTrip.get(x.trip_id).stop_sequence-x.stop_sequence,durationMinutes:minsBetween(x.departure_time,endByTrip.get(x.trip_id).arrival_time)}],transfers:0
    }));
    const startTripIds=[...new Set(starts.map(x=>x.trip_id))].slice(0,150);
    const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,150);
    const [startPaths,endPaths]=await Promise.all([
-    startTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,transport_stops!inner(name)").in("trip_id",startTripIds).limit(12000):Promise.resolve({data:[]}),
+    startTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name)").in("trip_id",startTripIds).limit(12000):Promise.resolve({data:[]}),
     endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,transport_stops!inner(name)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
    ]);
    if(startPaths.error||endPaths.error)throw new Error(startPaths.error?.message||endPaths.error?.message);
@@ -43,8 +44,8 @@ export default function JourneyPlanner(){
      const secondRoute=secondTrip?.scheduled_trips?.route_id;
      if(!secondRoute||firstRoute===secondRoute)continue;
      transfers.push({legs:[
-      {routeId:firstRoute,tripId:row.trip_id,from:origin.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence},
-      {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:dest.name,stops:secondTrip.stop_sequence-next.stop_sequence}
+      {routeId:firstRoute,tripId:row.trip_id,from:origin.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,row.arrival_time)},
+      {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:dest.name,stops:secondTrip.stop_sequence-next.stop_sequence,durationMinutes:minsBetween(next.departure_time,secondTrip.arrival_time)}
      ],transfers:1});
     }
    }
@@ -61,7 +62,7 @@ export default function JourneyPlanner(){
     if(routeResult.error)throw new Error(routeResult.error.message);
     const routeById=new Map((routeResult.data||[]).map(x=>[x.id,x]));
     const fareByRoute=new Map();for(const f of fareResult.data||[]){if(!fareByRoute.has(f.route_id))fareByRoute.set(f.route_id,[]);fareByRoute.get(f.route_id).push(f.transport_fare_products)}
-    for(const j of all){j.legs=j.legs.map(l=>({...l,route:routeById.get(l.routeId)})).filter(l=>l.route);j.minutes=j.legs.reduce((n,l)=>n+Math.max(4,l.stops*3),0)+(j.transfers?8:0);j.fare=j.legs.map(l=>estimateFare(fareByRoute.get(l.route.id))).join(" + ")}
+    for(const j of all){j.legs=j.legs.map(l=>({...l,route:routeById.get(l.routeId)})).filter(l=>l.route);j.minutes=j.legs.reduce((n,l)=>n+(l.durationMinutes??Math.max(4,l.stops*3)),0)+(j.transfers?8:0);j.fare=j.legs.map(l=>estimateFare(fareByRoute.get(l.route.id))).join(" + ")}
     setJourneys(all.filter(j=>j.legs.length));setDataInfo("Route paths come from active GTFS trip stop sequences. Duration is an indicative estimate (3 min per stop + transfer buffer), not an operator-published timetable or live ETA. Fares appear only when the feed supplies fare rules.");
    }
   }catch(e){setError(e.message||"Could not calculate routes.")}finally{setBusy(false)}
