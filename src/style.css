@@ -70,3 +70,9 @@
 .transport-footnote{display:flex;align-items:center;gap:8px;margin-top:16px;color:#8b978e;font-size:9px}
 @media(max-width:1000px){.transport-hub{padding:55px 7%}.transport-metrics{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:680px){.transport-hub{padding:45px 6%}.transport-hub-head{align-items:flex-start;flex-direction:column}.transport-hub-head h2{font-size:23px}.transport-metrics{grid-template-columns:repeat(2,1fr)}.transport-columns{grid-template-columns:1fr}.transport-panel{padding:15px}.transport-selects{grid-template-columns:1fr}.transport-metrics article:last-child{grid-column:span 2}}
+
+
+.transport-trip-time{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:8px 0;border-top:1px solid #dce7dc;margin-top:7px}
+.transport-trip-time b{font:700 12px 'DM Mono';color:#345b43}
+.transport-trip-time span{font-size:10px;color:#526f5c;text-align:right}
+.transport-trip-time small{grid-column:1/-1;font-size:8px;color:#8b998f}
