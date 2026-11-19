@@ -19,7 +19,7 @@ export default function JourneyPlanner(){
   try{
    const [a,b]=await Promise.all([
     supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",origin.id).limit(300),
-    supabase.from("trip_stop_times").select("trip_id,stop_sequence,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",dest.id).limit(300)
+    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",dest.id).limit(300)
    ]);
    if(a.error||b.error)throw new Error(a.error?.message||b.error?.message);
    const starts=a.data||[],ends=b.data||[],endByTrip=new Map(ends.map(x=>[x.trip_id,x]));
@@ -30,7 +30,7 @@ export default function JourneyPlanner(){
    const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,150);
    const [startPaths,endPaths]=await Promise.all([
     startTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name)").in("trip_id",startTripIds).limit(12000):Promise.resolve({data:[]}),
-    endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,transport_stops!inner(name)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
+    endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
    ]);
    if(startPaths.error||endPaths.error)throw new Error(startPaths.error?.message||endPaths.error?.message);
    const startByTrip=new Map(starts.map(x=>[x.trip_id,x])),endByTripFull=new Map(ends.map(x=>[x.trip_id,x]));
@@ -63,7 +63,7 @@ export default function JourneyPlanner(){
     const routeById=new Map((routeResult.data||[]).map(x=>[x.id,x]));
     const fareByRoute=new Map();for(const f of fareResult.data||[]){if(!fareByRoute.has(f.route_id))fareByRoute.set(f.route_id,[]);fareByRoute.get(f.route_id).push(f.transport_fare_products)}
     for(const j of all){j.legs=j.legs.map(l=>({...l,route:routeById.get(l.routeId)})).filter(l=>l.route);j.minutes=j.legs.reduce((n,l)=>n+(l.durationMinutes??Math.max(4,l.stops*3)),0)+(j.transfers?8:0);j.fare=j.legs.map(l=>estimateFare(fareByRoute.get(l.route.id))).join(" + ")}
-    setJourneys(all.filter(j=>j.legs.length));setDataInfo("Route paths come from active GTFS trip stop sequences. Duration is an indicative estimate (3 min per stop + transfer buffer), not an operator-published timetable or live ETA. Fares appear only when the feed supplies fare rules.");
+    setJourneys(all.filter(j=>j.legs.length));setDataInfo("Route paths and in-vehicle duration come from active GTFS trip stop times. Transfer time is an 8-minute planning buffer, not a guaranteed connection. Fares appear only when the feed supplies fare rules.");
    }
   }catch(e){setError(e.message||"Could not calculate routes.")}finally{setBusy(false)}
  }
