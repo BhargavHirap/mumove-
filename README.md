@@ -25,7 +25,7 @@ The long-term ambition is broader than Mumbai. Nationwide journey planning will 
 - Interactive maps using OpenStreetMap tiles and Leaflet.
 - Road-distance and duration estimates through OSRM where available, with fallback estimates clearly identified.
 - A transport data explorer designed around operators, stops, routes, route-stop sequences, scheduled trips, alerts and vehicle positions.
-- A route-graph planner that can compare connections represented in the imported transport dataset.
+- A GTFS route-graph planner that searches direct, one-transfer and two-transfer options across multiple nearby candidate stops. Transfer legs are checked against the imported stop-time sequence; results are limited to the feeds currently imported.
 - A source-aware journey copilot that searches the currently imported database. A generative LLM is not yet connected.
 - Community reports for crowding, auto queues, waterlogging and station conditions.
 
@@ -34,7 +34,7 @@ The long-term ambition is broader than Mumbai. Nationwide journey planning will 
 MUMOVE must distinguish published facts from estimates and community reports.
 
 - **Map search is broader than timetable coverage.** Finding a place on the map does not mean MUMOVE has public-transport schedules for that place.
-- Public-transport journey results depend on validated operator feeds imported into the database. Current timetable coverage is Mumbai-focused.
+- Public-transport journey results depend on validated operator feeds imported into the database. Current timetable coverage is Mumbai-focused (BEST, TMT and a small KDMT subset in the community feed); nationwide place search does not imply nationwide timetable coverage.
 - The operator registry and source links are references; they do not prove that an operator API is connected.
 - The Mumbai BEST/TMT/KDMT GTFS project referenced by the app is community-maintained, not an official operator feed. Its validity dates, calendars and route data must be checked before schedules are presented as current.
 - No live vehicle location should be shown unless it comes from a trusted source and is sufficiently recent.
