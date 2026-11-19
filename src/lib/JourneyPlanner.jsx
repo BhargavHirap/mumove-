@@ -129,8 +129,53 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
      }
     }
    }
+   // Search a second interchange as well, so the planner can combine up to three
+   // GTFS trip legs when a direct or one-transfer connection does not exist.
+   const firstLegsByStop=new Map();
+   for(const row of startPaths.data||[]){
+    for(const start of startsByTrip.get(row.trip_id)||[]){
+     if(row.stop_sequence<=start.stop_sequence)continue;
+     if(!firstLegsByStop.has(row.stop_id))firstLegsByStop.set(row.stop_id,[]);
+     firstLegsByStop.get(row.stop_id).push({start,transfer:row,routeId:start.scheduled_trips.route_id});
+    }
+   }
+   const firstTransferStopIds=[...firstLegsByStop.keys()].slice(0,250);
+   const twoTransfers=[];
+   if(firstTransferStopIds.length){
+    const midStartResult=await supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,scheduled_trips!inner(route_id),transport_stops!inner(name,latitude,longitude)").in("stop_id",firstTransferStopIds).limit(8000);
+    if(midStartResult.error)throw new Error(midStartResult.error.message);
+    const midStarts=midStartResult.data||[];
+    const midTripIds=[...new Set(midStarts.map(x=>x.trip_id))].slice(0,120);
+    if(midTripIds.length){
+     const midPathResult=await supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",midTripIds).limit(12000);
+     if(midPathResult.error)throw new Error(midPathResult.error.message);
+     const midStartsByTrip=new Map(),midRowsByTrip=new Map();
+     for(const row of midStarts){if(!midStartsByTrip.has(row.trip_id))midStartsByTrip.set(row.trip_id,[]);midStartsByTrip.get(row.trip_id).push(row)}
+     for(const row of midPathResult.data||[]){if(!midRowsByTrip.has(row.trip_id))midRowsByTrip.set(row.trip_id,[]);midRowsByTrip.get(row.trip_id).push(row)}
+     for(const midStart of midStarts){
+      const firstOptions=firstLegsByStop.get(midStart.stop_id)||[];
+      if(!firstOptions.length)continue;
+      for(const first of firstOptions){
+       if(first.start.trip_id===midStart.trip_id||first.routeId===midStart.scheduled_trips.route_id)continue;
+       for(const midRow of midRowsByTrip.get(midStart.trip_id)||[]){
+        if(midRow.stop_sequence<=midStart.stop_sequence)continue;
+        for(const last of endsByStop.get(midRow.stop_id)||[]){
+         const finalRoute=last.end.scheduled_trips.route_id;
+         if(!finalRoute||last.trip_id===midStart.trip_id||last.trip_id===first.start.trip_id)continue;
+         if(finalRoute===midStart.scheduled_trips.route_id||finalRoute===first.routeId)continue;
+         twoTransfers.push({legs:[
+          {routeId:first.routeId,tripId:first.start.trip_id,from:first.start.transport_stops.name,to:first.transfer.transport_stops.name,stops:first.transfer.stop_sequence-first.start.stop_sequence,durationMinutes:minsBetween(first.start.departure_time,first.transfer.arrival_time),path:coordsFor(startRowsByTrip.get(first.start.trip_id)||[],first.start.stop_sequence,first.transfer.stop_sequence)},
+          {routeId:midStart.scheduled_trips.route_id,tripId:midStart.trip_id,from:midStart.transport_stops.name,to:midRow.transport_stops.name,stops:midRow.stop_sequence-midStart.stop_sequence,durationMinutes:minsBetween(midStart.departure_time,midRow.arrival_time),path:coordsFor(midRowsByTrip.get(midStart.trip_id)||[],midStart.stop_sequence,midRow.stop_sequence)},
+          {routeId:finalRoute,tripId:last.trip_id,from:midRow.transport_stops.name,to:last.end.transport_stops.name,stops:last.end.stop_sequence-last.stop_sequence,durationMinutes:minsBetween(last.departure_time,last.end.arrival_time),path:coordsFor(endRowsByTrip.get(last.trip_id)||[],last.stop_sequence,last.end.stop_sequence)}
+         ],transfers:2});
+        }
+       }
+      }
+     }
+    }
+   }
    const unique=new Map();
-   for(const j of [...direct,...transfers]){const k=j.legs.map(l=>l.tripId+":"+l.from+":"+l.to).join("|");if(!unique.has(k))unique.set(k,j)}
+   for(const j of [...direct,...transfers,...twoTransfers]){const k=j.legs.map(l=>l.tripId+":"+l.from+":"+l.to).join("|");if(!unique.has(k))unique.set(k,j)}
    const all=[...unique.values()].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,8);
    if(!all.length){const fallback=getStaticGuide(originStop,destStop);setGuide(fallback);setDataInfo(fallback?"No matching bus trip was found in the imported static bus timetable. Here is a separate, indicative rail/metro route guide for this pair.":"No matching bus trip was found in the imported static bus timetable, and MUMOVE has no verified rail/metro route for this exact pair yet. Try nearby station names. Live arrivals are not connected.");}
    else{
@@ -152,7 +197,7 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
  <StopPicker label="TO" value={to} onChange={v=>{setTo(v);setDest(null)}} onSelect={s=>{setDest(s);setTo(s.name)}} onUseLocation={()=>{}} placeholder="Search destination anywhere in India"/>
  <button className="button primary full" onClick={plan} disabled={busy||!from.trim()||!to.trim()}>{busy?<RefreshCw className="spin" size={16}/>:<Navigation size={16}/>} Find journeys</button>
  {error&&<div className="notice">{error}</div>}{origin?.matchedFrom&&<div className="planner-note">Searching nearby stops around {origin.matchedFrom}; closest: {origin.name} ({origin.distance.toFixed(1)} km).</div>}{dest?.matchedFrom&&<div className="planner-note">Searching nearby stops around {dest.matchedFrom}; closest: {dest.name} ({dest.distance.toFixed(1)} km).</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
- {journeys.length>0&&<JourneyRoutesMap journeys={journeys}/>} {journeys.map((j,i)=><article className="journey-result" key={i}><div className="journey-top"><b>GTFS option {i+1} · {j.transfers===0?"Direct":"1 transfer"}</b><span><Clock3 size={14}/> ~{j.minutes} min</span></div>{j.legs.map((l,n)=><div className="journey-leg" key={n}><span className="row-icon">{l.route.mode==="bus"?<Bus size={18}/>:<Train size={18}/>}</span><div><b>{modeName[l.route.mode]} · {l.route.route_short_name||l.route.route_long_name}</b><small>{l.from} → {l.to}</small></div></div>)}<div className="journey-foot"><span><Wallet size={14}/> {j.fare}</span><small>Fare shown only when GTFS publishes it</small></div></article>)}
+ {journeys.length>0&&<JourneyRoutesMap journeys={journeys}/>} {journeys.map((j,i)=><article className="journey-result" key={i}><div className="journey-top"><b>GTFS option {i+1} · {j.transfers===0?"Direct":j.transfers===1?"1 transfer":j.transfers+" transfers"}</b><span><Clock3 size={14}/> ~{j.minutes} min</span></div>{j.legs.map((l,n)=><div className="journey-leg" key={n}><span className="row-icon">{l.route.mode==="bus"?<Bus size={18}/>:<Train size={18}/>}</span><div><b>{modeName[l.route.mode]} · {l.route.route_short_name||l.route.route_long_name}</b><small>{l.from} → {l.to}</small></div></div>)}<div className="journey-foot"><span><Wallet size={14}/> {j.fare}</span><small>Fare shown only when GTFS publishes it</small></div></article>)}
  {!journeys.length&&!dataInfo&&<div className="planner-note">Import the public Mumbai GTFS schedule first. Timetables, live arrivals and operator fares are shown only when the source publishes them.</div>}
  </div><AITravelAssistant/></>
 }
