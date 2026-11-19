@@ -77,9 +77,9 @@ async function main() {
   const activeService = new Set();
   const activeTrips = new Set();
   const operators = [
-    {id:"best",name:"BEST Undertaking",mode:"bus",region:"Mumbai",official_url:"https://www.bestundertaking.com/",data_status:"static_schedule",updated_at:new Date().toISOString()},
-    {id:"tmt",name:"Thane Municipal Transport",mode:"bus",region:"Thane",official_url:"https://thanecity.gov.in/",data_status:"static_schedule",updated_at:new Date().toISOString()},
-    {id:"kdmt",name:"Kalyan-Dombivli Municipal Transport",mode:"bus",region:"Kalyan-Dombivli",official_url:"https://kdmc.gov.in/",data_status:"static_schedule",updated_at:new Date().toISOString()}
+    {id:"best",name:"BEST Undertaking",mode:"bus",region:"Mumbai",official_url:"https://www.bestundertaking.com/",data_status:"reference_only",updated_at:new Date().toISOString()},
+    {id:"tmt",name:"Thane Municipal Transport",mode:"bus",region:"Thane",official_url:"https://thanecity.gov.in/",data_status:"reference_only",updated_at:new Date().toISOString()},
+    {id:"kdmt",name:"Kalyan-Dombivli Municipal Transport",mode:"bus",region:"Kalyan-Dombivli",official_url:"https://kdmc.gov.in/",data_status:"reference_only",updated_at:new Date().toISOString()}
   ];
   const opWrite=await db.from("transport_operators").upsert(operators,{onConflict:"id"});
   if(opWrite.error) throw opWrite.error;
@@ -110,19 +110,19 @@ async function main() {
     if(item.start_date&&item.end_date)calendarRows.push(item);
   });
   await batchRows("transport_service_calendars",(async function*(){for(const x of calendarRows)yield x})(),"service_id");
+  const upcomingDates=[];
   const today=new Date(ymd+"T12:00:00+05:30");
-  for(const c of calendarRows){
-    for(let i=0;i<15;i++){
-      const d=new Date(today);d.setDate(d.getDate()+i);
-      const ds=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
-      const wd=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][d.getDay()];
-      if(ds>=c.start_date&&ds<=c.end_date&&c[wd]){activeService.add(c.service_id);break}
+  for(let i=0;i<15;i++){const d=new Date(today);d.setDate(d.getDate()+i);upcomingDates.push({date:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(d),weekday:["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][d.getDay()]});}
+  const exceptions=new Map();
+  await rows(archive,"calendar_dates.txt",async r=>{const d=date(r.date);if(!upcomingDates.some(x=>x.date===d))return;if(!exceptions.has(r.service_id))exceptions.set(r.service_id,new Map());exceptions.get(r.service_id).set(d,r.exception_type);});
+  for(const cal of calendarRows){
+    for(const day of upcomingDates){
+      if(day.date<cal.start_date||day.date>cal.end_date)continue;
+      const exception=exceptions.get(cal.service_id)?.get(day.date);
+      if(exception==="1"||(exception!=="2"&&cal[day.weekday])){activeService.add(cal.service_id);break;}
     }
   }
-  await rows(archive,"calendar_dates.txt",async r=>{
-    if(r.exception_type==="1")activeService.add(r.service_id);
-    if(r.exception_type==="2"&&!calendarRows.some(c=>c.service_id===r.service_id))activeService.delete(r.service_id);
-  });
+  for(const [serviceId,dates] of exceptions){if([...dates.values()].includes("1"))activeService.add(serviceId);}
   // Trips are inserted before stop_times to satisfy the relational FK.
   let tripBatch=[];
   await rows(archive,"trips.txt",async r=>{
@@ -180,6 +180,7 @@ async function main() {
     const {error}=await db.from("transport_fare_rules").upsert({fare_id:r.fare_id,route_id:r.route_id||null,origin_zone_id:r.origin_id||null,destination_zone_id:r.destination_id||null,contains_zone_id:r.contains_id||null},{onConflict:"id"});
     if(error && !/no unique|constraint/i.test(error.message))throw error;
   });
+  await db.from("transport_operators").upsert(operators.map(o=>({...o,data_status:"static_schedule",updated_at:new Date().toISOString()})),{onConflict:"id"});
   const source={id:"best-community-gtfs",operator_id:null,name:"Community Mumbai GTFS (BEST/TMT/KDMT)",source_type:"gtfs",source_url:SOURCE,access_status:"connected",last_success_at:new Date().toISOString(),last_error:null,notes:"Imported public community-maintained static schedule. Not an official operator feed; service calendar checked for today/next 14 days.",updated_at:new Date().toISOString()};
   const {error:sourceError}=await db.from("transport_data_sources").upsert(source,{onConflict:"id"});
   if(sourceError)throw sourceError;
