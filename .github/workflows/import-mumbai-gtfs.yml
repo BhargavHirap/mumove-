@@ -1,0 +1,32 @@
+name: Import Mumbai GTFS data
+
+on:
+  workflow_dispatch:
+    inputs:
+      feed_url:
+        description: "Optional GTFS ZIP URL (defaults to the community Mumbai feed)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out MUMOVE
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install importer dependencies
+        run: npm install --no-audit --no-fund
+      - name: Import and validate GTFS
+        run: npm run import:gtfs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MUMOVE_GTFS_URL: ${{ inputs.feed_url }}
