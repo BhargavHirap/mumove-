@@ -43,7 +43,7 @@ export default function App() {
     let alive = true;
     const load = async () => {
       const { data, error } = await supabase.from("reports").select("*").gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }).limit(100);
-      if (!error && alive && data?.length) setReports(data);
+      if (!error && alive) setReports(data || []);
     };
     load();
     const channel = supabase.channel("reports-live").on("postgres_changes", { event: "*", schema: "public", table: "reports" }, load).subscribe();
