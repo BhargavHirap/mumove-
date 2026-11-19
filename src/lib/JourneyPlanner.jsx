@@ -48,7 +48,7 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
  async function resolveEndpoint(value){
   if(value?.id)return value;
   let point=value?.lat!=null?value:null;
-  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
+  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&!currentLocation)throw new Error("Tap the location button and allow location access, or enter a starting place.");\n  if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
   if(!point){const places=await geocodeIndia(String(value?.name||value||"").trim(),1);point=places[0]}
   if(!point)throw new Error("Could not find "+(value?.name||value)+". Choose a suggestion and try again.");
   const dLat=15/111.32,dLng=15/(111.32*Math.max(.2,Math.cos(point.lat*Math.PI/180)));
@@ -105,7 +105,7 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
    const unique=new Map();
    for(const j of [...direct,...transfers]){const k=j.legs.map(l=>l.tripId+":"+l.from+":"+l.to).join("|");if(!unique.has(k))unique.set(k,j)}
    const all=[...unique.values()].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,6);
-   if(!all.length){const fallback=getStaticGuide(origin,dest);setGuide(fallback);setDataInfo(fallback?"No matching bus trip was found in the imported static bus timetable. Here is a separate, indicative rail/metro route guide for this pair.":"No matching bus trip was found in the imported static bus timetable, and MUMOVE has no verified rail/metro route for this exact pair yet. Try nearby station names. Live arrivals are not connected.");}
+   if(!all.length){const fallback=getStaticGuide(originStop,destStop);setGuide(fallback);setDataInfo(fallback?"No matching bus trip was found in the imported static bus timetable. Here is a separate, indicative rail/metro route guide for this pair.":"No matching bus trip was found in the imported static bus timetable, and MUMOVE has no verified rail/metro route for this exact pair yet. Try nearby station names. Live arrivals are not connected.");}
    else{
     const routeIds=[...new Set(all.flatMap(j=>j.legs.map(l=>l.routeId)))];
     const [routeResult,fareResult]=await Promise.all([
