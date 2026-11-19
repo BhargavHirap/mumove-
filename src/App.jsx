@@ -29,40 +29,31 @@ export default function App(){
  };
  async function loadStops(point=loc){
   if(!point){locate();return}
-  setNearLoading(true);setNearStatus("Searching mapped public transport within 5 km…");
-  const query=(radius)=>'[out:json][timeout:25];(node(around:'+radius+','+point.lat+','+point.lng+')[highway=bus_stop];node(around:'+radius+','+point.lat+','+point.lng+')[public_transport~"platform|stop_position|station"];way(around:'+radius+','+point.lat+','+point.lng+')[public_transport~"platform|station"];relation(around:'+radius+','+point.lat+','+point.lng+')[public_transport=station];node(around:'+radius+','+point.lat+','+point.lng+')[railway~"station|halt|tram_stop|subway_entrance"];way(around:'+radius+','+point.lat+','+point.lng+')[railway~"station|halt"];node(around:'+radius+','+point.lat+','+point.lng+')[amenity=ferry_terminal];);out center tags;';
-  const endpoints=["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter","https://overpass.private.coffee/api/interpreter"];
-  let result=null,lastError="";
-  for(const radius of [5000,10000]){
-   const q=query(radius);
-   for(const endpoint of endpoints){
-    try{
-     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
-     let response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:q,signal:controller.signal});
-     clearTimeout(timer);
-     if(!response.ok){
-      const fallback=new AbortController(),fallbackTimer=setTimeout(()=>fallback.abort(),14000);
-      response=await fetch(endpoint+"?data="+encodeURIComponent(q),{signal:fallback.signal});
-      clearTimeout(fallbackTimer);
-     }
-     if(!response.ok)throw new Error("Map service returned "+response.status);
-     result=await response.json();break;
-    }catch(e){lastError=e?.message||"Map service unavailable"}
-   }
-   if(result?.elements?.length)break;
-  }
-  if(!result){setNearStatus("Map lookup could not connect. Check internet and try again. "+lastError);setNearLoading(false);return}
-  const rows=(result.elements||[]).map(x=>{
-   const t=x.tags||{},lat=x.lat??x.center?.lat,lng=x.lon??x.center?.lon;
-   const isMetro=t.railway==="subway"||t.station==="subway"||t.subway==="yes"||t["railway:traffic_mode"]==="passenger"&&/metro|subway/i.test((t.operator||"")+" "+(t.name||""));
-   let type=t.highway==="bus_stop"||t.bus==="yes"?"Bus stop":t.amenity==="ferry_terminal"?"Ferry terminal":isMetro?"Metro station":t.railway==="station"||t.railway==="halt"?"Rail station":t.public_transport==="platform"?"Transit platform":"Public transport";
-   return{id:x.type+"-"+x.id,name:t.name||t["name:en"]||t.ref||type,type,lat,lng,operator:t.operator||"",distance:lat!=null&&lng!=null?distance(point,{lat,lng}):999};
-  }).filter(x=>Number.isFinite(x.lat)&&Number.isFinite(x.lng)).sort((a,b)=>a.distance-b.distance);
-  const unique=[...new Map(rows.map(x=>[x.id,x])).values()];
-  setStops(unique);
-  setNearStatus(unique.length?unique.length+" mapped stops and stations found · OpenStreetMap · "+(unique[0].distance<=5?"within 5 km":"within 10 km"):"No mapped stops found within 10 km. Try searching by area name.");
-  setNearLoading(false);
- } 
+  if(!hasSupabase){setNearStatus("Transport database is not connected. Check your internet and refresh.");return}
+  setNearLoading(true);setNearStatus("Finding nearby stops from MUMOVE database…");
+  try{
+   // One fast indexed bounding-box query; avoid slow multi-server Overpass retries.
+   const latDelta=5/111.32;
+   const lngDelta=5/(111.32*Math.max(0.2,Math.cos(point.lat*Math.PI/180)));
+   const {data,error}=await supabase.from("transport_stops")
+    .select("id,name,stop_type,operator_id,latitude,longitude")
+    .gte("latitude",point.lat-latDelta).lte("latitude",point.lat+latDelta)
+    .gte("longitude",point.lng-lngDelta).lte("longitude",point.lng+lngDelta)
+    .limit(1000);
+   if(error)throw error;
+   const rows=(data||[]).map(s=>({
+    id:s.id,name:s.name,type:s.stop_type==="bus_stop"?"Bus stop":s.stop_type==="rail_station"?"Rail station":s.stop_type==="metro_station"?"Metro station":s.stop_type==="ferry_terminal"?"Ferry terminal":"Public transport",
+    lat:Number(s.latitude),lng:Number(s.longitude),operator:s.operator_id||"",
+    distance:distance(point,{lat:Number(s.latitude),lng:Number(s.longitude)})
+   })).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lng)&&s.distance<=5)
+    .sort((a,b)=>a.distance-b.distance);
+   setStops(rows);
+   setNearStatus(rows.length?rows.length+" nearby timetable stops · MUMOVE database · within 5 km":"No imported timetable stops within 5 km. Try a different area.");
+  }catch(e){
+   setStops([]);
+   setNearStatus("Nearby search failed: "+(e.message||"Please check your connection and retry."));
+  }finally{setNearLoading(false)}
+ }
  async function searchArea(){
   const place=manualPlace.trim();if(!place){setNearStatus("Enter a locality, station or landmark to search.");return}
   setNearLoading(true);setNearStatus("Finding "+place+"…");
