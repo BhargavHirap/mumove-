@@ -3,8 +3,8 @@
 ## Supabase setup
 
 1. Open the Supabase project dashboard.
-2. Select **SQL Editor → New query**.
-3. Paste and run `supabase/migrations/202611190001_transport_foundation.sql`.
+2. Select **SQL Editor → New query** and run `supabase/schema.sql` first (this creates the community reports table used by the current app).
+3. Open another query and run `supabase/migrations/202611190001_transport_foundation.sql` (this creates the transport-data foundation).
 4. In **Project Settings → API**, copy the Project URL and the publishable/anon key.
 5. Add them to the Vercel project as:
    - `VITE_SUPABASE_URL`
