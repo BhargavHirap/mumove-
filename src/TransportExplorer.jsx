@@ -7,6 +7,10 @@ const SOURCES=[
  {name:"Western Railway",detail:"Mumbai suburban timetable · latest published revision",url:"https://wr.indianrailways.gov.in/offerings/custom/Mumbai%20Suburban/preview/523",kind:"Official timetable"},
  {name:"BEST Undertaking",detail:"Operator information and passenger services",url:"https://www.bestundertaking.com/",kind:"Official operator"},
  {name:"BEST Prawas",detail:"Official bus ETA, route planning and bus tracking app",url:"https://play.google.com/store/apps/details?id=com.dimts.best.bestapplication",kind:"Official passenger app"},
+ {name:"BEST community GTFS",detail:"Community-maintained BEST/TMT/KDMT routes and schedules · MIT-0",url:"https://github.com/croyla/mumbai-gtfs",kind:"Community dataset · not operator-endorsed"},
+ {name:"BEST fare chart",detail:"BMC Year Book fare table · effective 9 May 2025",url:"https://portal.mcgm.gov.in/irj/go/km/docs/documents/HomePage%20Data/Whats%20New/English%20Year%20Book%202025%20Portal.pdf",kind:"Published fare reference"},
+ {name:"Maharashtra auto & taxi tariffs",detail:"Transport Department tariff-card publication page",url:"https://transport.maharashtra.gov.in/Site/Common/ViewPdfList.aspx?Doctype=1d1f28f9-a4e5-4b09-ab8b-1d4576adca18",kind:"Official tariff-card source"},
+ {name:"UTS mobile ticketing",detail:"Railway suburban ticketing and fare purchase",url:"https://www.utsonmobile.indianrail.gov.in/",kind:"Official ticketing portal"},
  {name:"MMRDA",detail:"Metro corridor notices and timetable publications",url:"https://www.mmrda.maharashtra.gov.in/",kind:"Official authority"},
  {name:"Mumbai Metro One",detail:"Line 1 operator information",url:"https://www.mumbaimetroone.com/",kind:"Official operator"},
  {name:"MMRCL",detail:"Aqua Line service information",url:"https://mmrcl.com/",kind:"Official operator"}
