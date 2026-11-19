@@ -16,6 +16,19 @@ const places = [
   { name: "Powai", lat: 19.1176, lng: 72.906 }
 ];
 const stations = places.slice(0,5).map((p,i)=>({...p,line:i===4?"Western + Central":"Western Line"}));
+const metroCorridors = [
+  {line:"Line 1 · Blue",route:"Versova — Andheri — Ghatkopar",status:"Operating corridor",stations:"12 stations",operator:"Mumbai Metro One"},
+  {line:"Line 2A · Yellow",route:"Dahisar East — Andheri West",status:"Operating corridor",stations:"17 stations",operator:"MMMOCL"},
+  {line:"Line 3 · Aqua",route:"Cuffe Parade — BKC — Aarey JVLR",status:"Operating corridor",stations:"Underground corridor",operator:"MMRCL"},
+  {line:"Line 7 · Red",route:"Dahisar East — Andheri East",status:"Operating corridor",stations:"13 stations",operator:"MMMOCL"},
+  {line:"Line 2B",route:"DN Nagar — Mandale",status:"Phased corridor · verify opened section",stations:"Phase-wise opening",operator:"MMMOCL"},
+  {line:"Line 9",route:"Dahisar East — Mira-Bhayandar",status:"Phased corridor · verify opened section",stations:"Phase-wise opening",operator:"MMMOCL"}
+];
+const railCorridors = [
+  {name:"Western Line",route:"Churchgate — Virar",hubs:"Churchgate · Dadar · Bandra · Andheri · Borivali · Virar"},
+  {name:"Central Line",route:"CSMT — Kalyan / Kasara / Khopoli",hubs:"CSMT · Byculla · Dadar · Kurla · Thane · Kalyan"},
+  {name:"Harbour Line",route:"CSMT — Panvel / Goregaon",hubs:"CSMT · Wadala Road · Chembur · Vashi · Nerul · Panvel"}
+];
 const categories = [
   { id:"train", label:"Train crowd", icon:TrainFront, options:["Low","Moderate","Heavy","Very heavy"] },
   { id:"auto", label:"Auto queue", icon:Bike, options:["No queue","Under 5 min","5–15 min","15+ min"] },
@@ -109,7 +122,7 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="topbar"><a className="brand" href="#"><span className="brand-mark"><Activity size={19}/></span><span>MUMOVE<span className="brand-dot">.</span><small>MOBILITY INTELLIGENCE</small></span></a>
-      <nav className={mobileMenu?"nav open":"nav"}><a className="active" href="#plan">Plan a journey</a><a href="#explore">Explore map</a><a href="#reports">Community</a><a href="#vision">Our vision</a></nav>
+      <nav className={mobileMenu?"nav open":"nav"}><a className="active" href="#plan">Plan a journey</a><a href="#explore">Explore map</a><a href="#network">Transport network</a><a href="#reports">Community</a><a href="#vision">Our vision</a></nav>
       <div className="top-actions"><span className="city-pill"><MapPin size={13}/> Mumbai pilot</span><button className="report-btn" onClick={()=>setModal(true)}><Plus size={16}/> Report update</button><button className="menu-btn" onClick={()=>setMobileMenu(!mobileMenu)} aria-label="Toggle menu">{mobileMenu?<X/>:<Menu/>}</button></div>
     </header>
     <main>
@@ -129,6 +142,7 @@ export default function App() {
         <p className="fine-print">Actual fares, routes and journey times vary by operator, traffic, time of day and local fare rules. Train/bus availability and app-cab quotes are not connected yet.</p>
       </section>
 
+      <section className="network-section" id="network"><div className="section-heading"><div><div className="eyebrow">MUMBAI TRANSPORT NETWORK</div><h2>Know the network before you move.</h2><p>Corridor reference for suburban rail and metro. Service disruptions and next-train arrivals are not connected yet.</p></div><span className="estimate-chip">NETWORK REFERENCE</span></div><div className="network-columns"><div className="network-panel"><div className="network-panel-head"><TrainFront size={19}/><div><b>Mumbai suburban railway</b><small>Three major commuter corridors</small></div></div>{railCorridors.map(line=><article className="network-row" key={line.name}><div><b>{line.name}</b><span>{line.route}</span><small>{line.hubs}</small></div><a href="https://www.indianrail.gov.in/" target="_blank" rel="noreferrer">Rail info ↗</a></article>)}</div><div className="network-panel"><div className="network-panel-head"><Train size={19}/><div><b>Mumbai Metro corridors</b><small>Published network overview · verify operator notices</small></div></div>{metroCorridors.map(line=><article className="network-row" key={line.line}><div><b>{line.line}</b><span>{line.route}</span><small>{line.operator} · {line.stations}</small></div><span className={line.status.includes("Phased")?"network-status partial":"network-status"}>{line.status}</span></article>)}</div></div><div className="bus-discovery"><div><Bus size={19}/><div><b>BEST and nearby bus stops</b><small>Mapped stop discovery uses OpenStreetMap near your shared location. It does not provide bus route numbers, arrivals or vehicle tracking.</small></div></div><span>{nearbyStops.filter(x=>x.type==="Bus stop").length} mapped bus stops found nearby</span></div><p className="fine-print">Transport network references are informational. MUMOVE does not currently provide official departure boards, disruption alerts, or ticket sales. Check operator channels before travel.</p></section>
       <section className="feature-strip"><div><span><Train size={18}/></span><b>Rail & metro</b><small>Schedules and service data integration planned</small></div><div><span><Bus size={18}/></span><b>City buses</b><small>Routes, stops and operator feeds planned</small></div><div><span><Bike size={18}/></span><b>Auto & taxi</b><small>Fare intelligence and booking partners planned</small></div><div><span><Plane size={18}/></span><b>Travel beyond</b><small>Airport, intercity and global expansion</small></div></section>
 
       <section className="live-data-strip"><div className="live-data-heading"><div className="eyebrow">LIVE CONTEXT</div><h2>Your surroundings, at a glance.</h2><p>Live weather and mapped transport discovery use public data sources. Stop locations are mapped data, not vehicle tracking.</p></div><div className="live-data-cards"><article><span className="live-data-icon"><CloudRain size={19}/></span><div><small>LOCAL WEATHER</small><b>{weather?Math.round(weather.temperature_2m)+"°C · "+weather.precipitation+" mm rain":"Waiting for location"}</b><em>{weatherStatus}</em></div></article><article><span className="live-data-icon"><Navigation size={19}/></span><div><small>NEARBY TRANSPORT</small><b>{nearbyStops.length?nearbyStops.length+" mapped places":"Location needed"}</b><em>{nearbyStatus}</em></div></article></div>{nearbyStops.length>0&&<div className="nearby-list">{nearbyStops.slice(0,8).map(stop=><span key={stop.id}><MapPin size={13}/><b>{stop.name}</b><small>{stop.type}</small></span>)}</div>}</section>
