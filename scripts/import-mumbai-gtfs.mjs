@@ -135,8 +135,15 @@ async function main() {
     if(tripBatch.length>=BATCH){await upsert("scheduled_trips",tripBatch,"id");tripBatch=[]}
   });
   await upsert("scheduled_trips",tripBatch,"id");
-  // Store route stop sequences and actual trip stop times in bounded batches.
-  let timeBatch=[],routeStopBatch=new Map();
+  // Rebuild route-stop patterns from the feed. Variant trips can share a route,
+  // so aggregate unique stops per route, then assign stable sequential positions.
+  const routeIds = [...routeById.keys()];
+  for (let i=0; i<routeIds.length; i+=200) {
+    const {error} = await db.from("transport_route_stops").delete().in("route_id", routeIds.slice(i,i+200));
+    if (error) throw new Error("Could not refresh route-stop patterns: "+error.message);
+  }
+  let timeBatch=[];
+  const routeStopMap=new Map();
   const firstLast=new Map();
   await rows(archive,"stop_times.txt",async r=>{
     if(!activeTrips.has(r.trip_id))return;
@@ -148,13 +155,30 @@ async function main() {
     const f=firstLast.get(r.trip_id);
     if(!f||seq<f.firstSeq)firstLast.set(r.trip_id,{firstSeq:seq,first:t,lastSeq:seq,last:a,route_id:tripById.get(r.trip_id).route_id});
     else if(seq>f.lastSeq){f.lastSeq=seq;f.last=a}
+    const routeId=tripById.get(r.trip_id).route_id;
+    const key=routeId+"|"+r.stop_id;
+    const prior=routeStopMap.get(key);
+    if(!prior||seq<prior.source_sequence)routeStopMap.set(key,{route_id:routeId,stop_id:r.stop_id,source_sequence:seq});
     if(timeBatch.length>=BATCH){await upsert("trip_stop_times",timeBatch,"trip_id,stop_sequence");timeBatch=[]}
-    routeStopBatch.set(tripById.get(r.trip_id).route_id+"|"+seq,{route_id:tripById.get(r.trip_id).route_id,stop_id:r.stop_id,stop_sequence:seq});
-    if(routeStopBatch.size>=BATCH){await upsert("transport_route_stops",[...routeStopBatch.values()],"route_id,stop_sequence");routeStopBatch.clear()}
   });
   await upsert("trip_stop_times",timeBatch,"trip_id,stop_sequence");
-  // Deduplicate route-stop sequence rows across trips, keeping the same stop at the same sequence.
-  await upsert("transport_route_stops",[...routeStopBatch.values()],"route_id,stop_sequence");
+  // Multiple trips may use variant patterns. Keep each stop once per route,
+  // order by earliest observed sequence, and re-number to avoid sequence collisions.
+  const stopsByRoute=new Map();
+  for(const row of routeStopMap.values()){
+    if(!stopsByRoute.has(row.route_id))stopsByRoute.set(row.route_id,[]);
+    stopsByRoute.get(row.route_id).push(row);
+  }
+  let routeStopBatch=[];
+  for(const [routeId,items] of stopsByRoute){
+    items.sort((a,b)=>a.source_sequence-b.source_sequence||a.stop_id.localeCompare(b.stop_id));
+    items.forEach((item,index)=>routeStopBatch.push({route_id:routeId,stop_id:item.stop_id,stop_sequence:index+1}));
+    if(routeStopBatch.length>=BATCH){
+      await upsert("transport_route_stops",routeStopBatch,"route_id,stop_sequence");
+      routeStopBatch=[];
+    }
+  }
+  await upsert("transport_route_stops",routeStopBatch,"route_id,stop_sequence");
   const {error:assignError}=await db.rpc("mumove_assign_stop_operators");
   if(assignError)throw new Error("Could not map stop ownership: "+assignError.message);
   // Patch first/last schedule times in bounded upsert batches; overnight trips omit arrival.
