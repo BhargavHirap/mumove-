@@ -8,12 +8,14 @@ A mobile-first React + Vite PWA prototype that combines journey estimates, commu
 - Road-distance/time estimation through OSRM where available; otherwise a clearly labelled fallback estimate.
 - Fare guidance: BEST adult non-AC distance slabs from the published BMC Year Book 2025 table; auto and black-yellow taxi meter estimates use the revised MMR tariff values announced for September 2026. Railway and metro fares remain operator-check links until station-to-station fare tables are integrated.
 - Transport data explorer backed by Supabase tables for operators, stops, routes, route-stop sequences, scheduled trips, alerts and recent vehicle positions.
-- Nearby stop search against imported operator-linked stops; the existing map also uses OpenStreetMap mapped stop discovery around a location the commuter chooses to share.
+- Nearby stop search against imported operator-linked stops, displayed on interactive OpenStreetMap / Leaflet maps with zoom, scale, marker details and route-fit controls.
+- Journey maps render imported GTFS stop sequences on OpenStreetMap; map lines are indicative stop-to-stop paths, not surveyed track geometry.
+- Place search uses OpenStreetMap Nominatim across India. Public-transport journey results are limited to areas and operators with validated timetable feeds imported into MUMOVE; the current feed coverage is Mumbai-focused.
 - Multi-operator route graph search across imported route-stop sequences.
 - Source directory for Central Railway, Western Railway, BEST, MMRDA, Mumbai Metro One, MMRCL and public data references.
 - Early journey copilot that searches the currently imported database and provides transparent source-aware guidance. A generative LLM is not yet connected.
 - Community crowding, auto-queue, waterlogging and station-condition reports.
-- Live weather context and interactive OpenStreetMap map.
+- Live weather context and interactive OpenStreetMap maps.
 
 ## Important data integrity rules
 
@@ -59,6 +61,10 @@ npm run build
 - Mumbai Metro One: https://www.mumbaimetroone.com/
 - MMRCL: https://mmrcl.com/
 - Community GTFS reference (MIT-0): https://github.com/croyla/mumbai-gtfs
+
+## Map and journey coverage
+
+MUMOVE uses OpenStreetMap tiles with Leaflet for all map rendering. No Google Maps JavaScript API, Google Routes API, or Google Maps key is required. Place lookup is nationwide, but nationwide public-transport journey planning is not available until additional verified city/operator GTFS feeds are imported. MUMOVE must not invent departures, fares, or connections where no trusted feed exists.
 
 ## Next integration requirements
 
