@@ -7,8 +7,7 @@
 
 <p align="center">
   <a href="https://mumove.vercel.app">Open MUMOVE</a> ·
-  <a href="https://github.com/BhargavHirap/mumove-/issues">Report a problem</a> ·
-  <a href="https://github.com/BhargavHirap/mumove-/discussions">Join the discussion</a>
+  <a href="https://github.com/BhargavHirap/mumove-/issues">Report a problem</a>
 </p>
 
 > **Project status:** early-stage prototype. MUMOVE is being built in public. Features, transport coverage and data quality are still evolving; please read the coverage notes below before relying on journey information.
@@ -113,7 +112,7 @@ See the [open issues](https://github.com/BhargavHirap/mumove-/issues) for work t
 
 Contributions are welcome, especially reproducible bug reports, tests, accessibility improvements, documentation and verified transport-data integrations.
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. For larger ideas, start a discussion or open an issue so the approach can be agreed before implementation.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. For larger ideas, open an issue first so the approach can be agreed before implementation.
 
 ## Data sources and attribution
 
