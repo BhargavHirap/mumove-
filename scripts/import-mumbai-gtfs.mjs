@@ -157,14 +157,15 @@ async function main() {
   await upsert("transport_route_stops",[...routeStopBatch.values()],"route_id,stop_sequence");
   const {error:assignError}=await db.rpc("mumove_assign_stop_operators");
   if(assignError)throw new Error("Could not map stop ownership: "+assignError.message);
-  // Patch first/last schedule times; overnight trips omit arrival rather than violate time ordering.
-  let updates=0;
+  // Patch first/last schedule times in bounded upsert batches; overnight trips omit arrival.
+  let updates=0,scheduleBatch=[];
   for(const [tripId,f] of firstLast){
-    const arrival=f.last>=f.first?f.last:null;
-    const {error}=await db.from("scheduled_trips").update({departure_time:f.first,arrival_time:arrival}).eq("id",tripId);
-    if(error)throw error;
-    updates++;
+    const trip=tripById.get(tripId);
+    if(!trip)continue;
+    scheduleBatch.push({id:tripId,route_id:trip.route_id,service_date:null,departure_time:f.first,arrival_time:f.last>=f.first?f.last:null,direction_label:null,calendar_ref:trip.service_id,source_ref:SOURCE,source_updated_at:new Date().toISOString(),verified_at:new Date().toISOString(),is_current:true});
+    if(scheduleBatch.length>=BATCH){await upsert("scheduled_trips",scheduleBatch,"id");updates+=scheduleBatch.length;scheduleBatch=[]}
   }
+  await upsert("scheduled_trips",scheduleBatch,"id");updates+=scheduleBatch.length;
   // Import optional GTFS v1 fare products/rules when present.
   const fareMap=new Map();
   await rows(archive,"fare_attributes.txt",async r=>{
@@ -179,7 +180,7 @@ async function main() {
     const {error}=await db.from("transport_fare_rules").upsert({fare_id:r.fare_id,route_id:r.route_id||null,origin_zone_id:r.origin_id||null,destination_zone_id:r.destination_id||null,contains_zone_id:r.contains_id||null},{onConflict:"id"});
     if(error && !/no unique|constraint/i.test(error.message))throw error;
   });
-  const source={id:"best-community-gtfs",operator_id:"best",name:"Community Mumbai GTFS (BEST/TMT/KDMT)",source_type:"gtfs",source_url:SOURCE,access_status:"connected",last_success_at:new Date().toISOString(),last_error:null,notes:"Imported public community-maintained static schedule. Not an official operator feed; service calendar checked for today/next 14 days.",updated_at:new Date().toISOString()};
+  const source={id:"best-community-gtfs",operator_id:null,name:"Community Mumbai GTFS (BEST/TMT/KDMT)",source_type:"gtfs",source_url:SOURCE,access_status:"connected",last_success_at:new Date().toISOString(),last_error:null,notes:"Imported public community-maintained static schedule. Not an official operator feed; service calendar checked for today/next 14 days.",updated_at:new Date().toISOString()};
   const {error:sourceError}=await db.from("transport_data_sources").upsert(source,{onConflict:"id"});
   if(sourceError)throw sourceError;
   console.log(JSON.stringify({source:SOURCE,activeServices:activeService.size,activeTrips:activeTrips.size,tripTimesImported:"batched",tripSchedulesUpdated:updates,fareProducts:fareMap.size},null,2));
