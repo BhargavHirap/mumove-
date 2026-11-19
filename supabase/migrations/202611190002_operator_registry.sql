@@ -30,5 +30,5 @@ values
  ('metro-mmrda','mmrda-metro','MMRDA metro timetable and service notices','official_web','https://www.mmrda.maharashtra.gov.in/','public','Official authority source. Timetable files are published as notices; no automated API feed configured.'),
  ('metro-line-1','mumbai-metro-one','Mumbai Metro One official service information','official_web','https://www.mumbaimetroone.com/','public','Official operator reference; no live feed connected.'),
  ('metro-line-3','mmrcl-metro-3','MMRCL Aqua Line service information','official_web','https://mmrcl.com/','public','Official operator reference; no live feed connected.'),
- ('osm-stops','', 'OpenStreetMap public transport map data','open_data','https://www.openstreetmap.org/','public','Community-mapped stop/station locations. Not an operator timetable or live vehicle feed.')
+ ('osm-stops',null, 'OpenStreetMap public transport map data','open_data','https://www.openstreetmap.org/','public','Community-mapped stop/station locations. Not an operator timetable or live vehicle feed.')
 on conflict (id) do update set name=excluded.name,source_url=excluded.source_url,access_status=excluded.access_status,notes=excluded.notes,updated_at=now();
