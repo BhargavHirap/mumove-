@@ -136,7 +136,7 @@ async function main() {
   });
   await upsert("scheduled_trips",tripBatch,"id");
   // Store route stop sequences and actual trip stop times in bounded batches.
-  let timeBatch=[],routeStopBatch=[];
+  let timeBatch=[],routeStopBatch=new Map();
   const firstLast=new Map();
   await rows(archive,"stop_times.txt",async r=>{
     if(!activeTrips.has(r.trip_id))return;
@@ -149,13 +149,14 @@ async function main() {
     if(!f||seq<f.firstSeq)firstLast.set(r.trip_id,{firstSeq:seq,first:t,lastSeq:seq,last:a,route_id:tripById.get(r.trip_id).route_id});
     else if(seq>f.lastSeq){f.lastSeq=seq;f.last=a}
     if(timeBatch.length>=BATCH){await upsert("trip_stop_times",timeBatch,"trip_id,stop_sequence");timeBatch=[]}
-    routeStopBatch.push({route_id:tripById.get(r.trip_id).route_id,stop_id:r.stop_id,stop_sequence:seq});
-    if(routeStopBatch.length>=BATCH){await upsert("transport_route_stops",routeStopBatch,"route_id,stop_sequence");routeStopBatch=[]}
+    routeStopBatch.set(tripById.get(r.trip_id).route_id+"|"+seq,{route_id:tripById.get(r.trip_id).route_id,stop_id:r.stop_id,stop_sequence:seq});
+    if(routeStopBatch.size>=BATCH){await upsert("transport_route_stops",[...routeStopBatch.values()],"route_id,stop_sequence");routeStopBatch.clear()}
   });
   await upsert("trip_stop_times",timeBatch,"trip_id,stop_sequence");
   // Deduplicate route-stop sequence rows across trips, keeping the same stop at the same sequence.
-  const dedup=[...new Map(routeStopBatch.map(x=>[x.route_id+"|"+x.stop_sequence,x])).values()];
-  await upsert("transport_route_stops",dedup,"route_id,stop_sequence");
+  await upsert("transport_route_stops",[...routeStopBatch.values()],"route_id,stop_sequence");
+  const {error:assignError}=await db.rpc("mumove_assign_stop_operators");
+  if(assignError)throw new Error("Could not map stop ownership: "+assignError.message);
   // Patch first/last schedule times; overnight trips omit arrival rather than violate time ordering.
   let updates=0;
   for(const [tripId,f] of firstLast){
