@@ -1,7 +1,6 @@
 import React,{useEffect} from "react";
 import {MapContainer,TileLayer,Polyline,CircleMarker,Popup,ScaleControl,ZoomControl,useMap} from "react-leaflet";
 import L from "leaflet";
-import {MapPin} from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
 const COLORS=["#36c5d9","#ffbf69","#a996ff","#57d6b1","#ff7e79","#7da8ff"];
