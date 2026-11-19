@@ -63,15 +63,26 @@ const date = s => s ? s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8) : null;
 const bool = v => v === "1" || v === "true";
 const operatorFor = name => {
   const n=(name||"").toLowerCase();
-  if (/tmt|thane municipal/.test(n)) return "tmt";
   if (/kdmt|kalyan.?dombivli/.test(n)) return "kdmt";
+  if (/tmt|thane municipal/.test(n)) return "tmt";
+  if (/best|mumbai bus|brihanmumbai/.test(n)) return "best";
   return "best";
+};
+// The community feed's KDMT/TMT trip IDs are more reliable than a missing or
+// inconsistent agency_id on some route rows. Use these IDs to correct ownership.
+const operatorFromTripId = id => {
+  const value=(id||"").toLowerCase();
+  if (value.startsWith("kdmt_") || value.startsWith("kdmt-")) return "kdmt";
+  if (value.startsWith("tmt_") || value.startsWith("tmt-")) return "tmt";
+  return null;
 };
 async function main() {
   await download();
   const archive = await unzipper.Open.file(temp);
   const agencyById = new Map();
   const routeById = new Map();
+  const routeRecordById = new Map();
+  const correctedRouteIds = new Set();
   const tripById = new Map();
   const serviceIds = new Set();
   const activeService = new Set();
@@ -100,6 +111,7 @@ async function main() {
     const op=operatorFor(agency);
     routeById.set(r.route_id,op);
     const item={id:r.route_id,operator_id:op,route_short_name:r.route_short_name||null,route_long_name:r.route_long_name||r.route_short_name||r.route_id,mode:"bus",source_ref:SOURCE,active:true,updated_at:new Date().toISOString()};
+    routeRecordById.set(r.route_id,item);
     const {error}=await db.from("transport_routes").upsert(item,{onConflict:"id"});
     if(error)throw error;
   });
@@ -127,14 +139,23 @@ async function main() {
   let tripBatch=[];
   await rows(archive,"trips.txt",async r=>{
     if(!activeService.has(r.service_id))return;
-    const op=routeById.get(r.route_id);
+    const op=operatorFromTripId(r.trip_id)||routeById.get(r.route_id);
     if(!op)return;
+    if(routeById.get(r.route_id)!==op){
+      routeById.set(r.route_id,op);
+      const routeRecord=routeRecordById.get(r.route_id);
+      if(routeRecord) routeRecord.operator_id=op;
+      correctedRouteIds.add(r.route_id);
+    }
     tripById.set(r.trip_id,{route_id:r.route_id,operator_id:op,service_id:r.service_id});
     activeTrips.add(r.trip_id);
     tripBatch.push({id:r.trip_id,route_id:r.route_id,service_date:null,departure_time:"00:00:00",arrival_time:null,direction_label:r.direction_id||null,calendar_ref:r.service_id,source_ref:SOURCE,source_updated_at:new Date().toISOString(),verified_at:new Date().toISOString(),is_current:true});
     if(tripBatch.length>=BATCH){await upsert("scheduled_trips",tripBatch,"id");tripBatch=[]}
   });
   await upsert("scheduled_trips",tripBatch,"id");
+  // Persist trip-ID-based operator corrections before route-stop ownership is assigned.
+  const correctedRouteRows=[...correctedRouteIds].map(id=>routeRecordById.get(id)).filter(Boolean);
+  await batchRows("transport_routes",(async function*(){yield* correctedRouteRows})(),"id");
   // Rebuild route-stop patterns from the feed. Variant trips can share a route,
   // so aggregate unique stops per route, then assign stable sequential positions.
   const routeIds = [...routeById.keys()];
@@ -181,6 +202,10 @@ async function main() {
   await upsert("transport_route_stops",routeStopBatch,"route_id,stop_sequence");
   const {error:assignError}=await db.rpc("mumove_assign_stop_operators");
   if(assignError)throw new Error("Could not map stop ownership: "+assignError.message);
+  // KDMT stop IDs are operator-prefixed in this source; preserve that attribution
+  // even when a stop is also used by a route from another agency.
+  const {error:kdmtStopError}=await db.from("transport_stops").update({operator_id:"kdmt",updated_at:new Date().toISOString()}).like("id","KDMT_%");
+  if(kdmtStopError)throw new Error("Could not preserve KDMT stop ownership: "+kdmtStopError.message);
   // Patch first/last schedule times in bounded upsert batches; overnight trips omit arrival.
   let updates=0,scheduleBatch=[];
   for(const [tripId,f] of firstLast){
