@@ -53,11 +53,11 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
   if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
   if(!point){const places=await geocodeIndia(String(value?.name||value||"").trim(),1);point=places[0]}
   if(!point)throw new Error("Could not find "+(value?.name||value)+". Choose a suggestion and try again.");
-  const dLat=15/111.32,dLng=15/(111.32*Math.max(.2,Math.cos(point.lat*Math.PI/180)));
+  const dLat=3/111.32,dLng=3/(111.32*Math.max(.2,Math.cos(point.lat*Math.PI/180)));
   const {data,error}=await supabase.from("transport_stops").select("id,name,stop_type,operator_id,latitude,longitude").gte("latitude",point.lat-dLat).lte("latitude",point.lat+dLat).gte("longitude",point.lng-dLng).lte("longitude",point.lng+dLng).limit(1000);
   if(error)throw error;
   const nearest=(data||[]).map(s=>({...s,lat:Number(s.latitude),lng:Number(s.longitude),distance:Math.hypot((Number(s.latitude)-point.lat)*111.32,(Number(s.longitude)-point.lng)*111.32*Math.cos(point.lat*Math.PI/180))})).filter(s=>Number.isFinite(s.distance)).sort((x,y)=>x.distance-y.distance)[0];
-  if(!nearest||nearest.distance>15)throw new Error("No imported MUMOVE transport stop was found within 15 km of "+(point.name||"this place")+". Place search works across India, but route data is currently limited to imported coverage areas.");
+  if(!nearest||nearest.distance>3)throw new Error("No imported MUMOVE transport stop was found within 3 km of "+(point.name||"this place")+". MUMOVE will not snap your journey to a distant stop. Google transit results require the Google Routes API key to be configured.");
   return {...nearest,name:nearest.name,matchedFrom:point.name||value?.name||value,distance:nearest.distance};
  }
  function useCurrentLocation(){
