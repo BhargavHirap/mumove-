@@ -212,3 +212,13 @@ body{color:#2C365A!important}
 .home-map-live .mumove-live-map{height:220px}
 .home-map-explore{width:100%;justify-content:center;margin-top:9px}
 @media(max-width:600px){.home-map-live .mumove-live-map{height:205px}}
+
+
+/* Prevent Android/Chromium forced-dark mode from recolouring the light MUMOVE theme */
+:root,html,body,#root,.mumove-app{color-scheme:only light!important;}
+html,body,#root,.mumove-app{background-color:#EEE8DF!important;color:#2C365A!important;}
+.app-header{background-color:#EEE8DF!important;}
+.home-route-card,.location-card,.panel,.mumove-map-section,.service-card,.home-services>button{background-color:#F8F5F0!important;color:#2C365A!important;}
+.home-hero h1,.home-nearby-row h2,.home-route-field input{color:#2C365A!important;}
+.home-hero>p,.home-nearby-row p,.home-trust-line{color:#66645D!important;}
+.bottom-nav{background-color:#F8F5F0!important;}
