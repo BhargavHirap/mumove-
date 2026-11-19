@@ -58,7 +58,7 @@ export default function App(){
   const place=manualPlace.trim();if(!place){setNearStatus("Enter a locality, station or landmark to search.");return}
   setNearLoading(true);setNearStatus("Finding "+place+"…");
   try{
-   const response=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="+encodeURIComponent(place+", Mumbai, India"));
+   const response=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="+encodeURIComponent(place+", India"));
    if(!response.ok)throw new Error("Place search unavailable");
    const hits=await response.json();
    if(!hits.length)throw new Error("Could not find that place. Try a nearby station or locality.");
