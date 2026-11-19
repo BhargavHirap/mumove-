@@ -14,31 +14,55 @@ export default function JourneyPlanner(){
  async function plan(){
   if(!hasSupabase){setError("Connect the MUMOVE Supabase project to search imported routes.");return}
   if(!origin||!dest){setError("Choose both origin and destination from the database suggestions.");return}
-  setBusy(true);setError("");setJourneys([]);
+  setBusy(true);setError("");setJourneys([]);setDataInfo("");
   try{
    const [a,b]=await Promise.all([
-    supabase.from("transport_route_stops").select("route_id,stop_sequence,transport_routes!inner(id,operator_id,route_short_name,route_long_name,mode)").eq("stop_id",origin.id).limit(500),
-    supabase.from("transport_route_stops").select("route_id,stop_sequence,transport_routes!inner(id,operator_id,route_short_name,route_long_name,mode)").eq("stop_id",dest.id).limit(500)
+    supabase.from("trip_stop_times").select("trip_id,stop_sequence,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",origin.id).limit(300),
+    supabase.from("trip_stop_times").select("trip_id,stop_sequence,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",dest.id).limit(300)
    ]);
    if(a.error||b.error)throw new Error(a.error?.message||b.error?.message);
-   const starts=a.data||[],ends=b.data||[],endByRoute=new Map(ends.map(x=>[x.route_id,x]));
-   const direct=starts.filter(x=>endByRoute.has(x.route_id)&&endByRoute.get(x.route_id).stop_sequence>x.stop_sequence).map(x=>({legs:[{route:x.transport_routes,from:origin.name,to:dest.name,stops:endByRoute.get(x.route_id).stop_sequence-x.stop_sequence}],transfers:0}));
-   const startRouteIds=[...new Set(starts.map(x=>x.route_id))],endRouteIds=[...new Set(ends.map(x=>x.route_id))];
-   const [startStops,endStops]=await Promise.all([
-    startRouteIds.length?supabase.from("transport_route_stops").select("route_id,stop_id,stop_sequence,transport_stops!inner(id,name)").in("route_id",startRouteIds).limit(3000):Promise.resolve({data:[]}),
-    endRouteIds.length?supabase.from("transport_route_stops").select("route_id,stop_id,stop_sequence,transport_stops!inner(id,name)").in("route_id",endRouteIds).limit(3000):Promise.resolve({data:[]})
+   const starts=a.data||[],ends=b.data||[],endByTrip=new Map(ends.map(x=>[x.trip_id,x]));
+   const direct=starts.filter(x=>endByTrip.has(x.trip_id)&&endByTrip.get(x.trip_id).stop_sequence>x.stop_sequence).map(x=>({
+    legs:[{routeId:x.scheduled_trips.route_id,tripId:x.trip_id,from:origin.name,to:dest.name,stops:endByTrip.get(x.trip_id).stop_sequence-x.stop_sequence}],transfers:0
+   }));
+   const startTripIds=[...new Set(starts.map(x=>x.trip_id))].slice(0,150);
+   const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,150);
+   const [startPaths,endPaths]=await Promise.all([
+    startTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,transport_stops!inner(name)").in("trip_id",startTripIds).limit(12000):Promise.resolve({data:[]}),
+    endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,transport_stops!inner(name)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
    ]);
-   const endStopsById=new Map();for(const x of endStops.data||[]){if(!endStopsById.has(x.stop_id))endStopsById.set(x.stop_id,[]);endStopsById.get(x.stop_id).push(x)}
+   if(startPaths.error||endPaths.error)throw new Error(startPaths.error?.message||endPaths.error?.message);
+   const startByTrip=new Map(starts.map(x=>[x.trip_id,x])),endByTripFull=new Map(ends.map(x=>[x.trip_id,x]));
+   const endsByStop=new Map();
+   for(const row of endPaths.data||[]){const end=endByTripFull.get(row.trip_id);if(!end||row.stop_sequence>=end.stop_sequence)continue;if(!endsByStop.has(row.stop_id))endsByStop.set(row.stop_id,[]);endsByStop.get(row.stop_id).push(row)}
    const transfers=[];
-   for(const s of startStops.data||[]){if(s.stop_sequence<= (starts.find(x=>x.route_id===s.route_id)?.stop_sequence||0))continue;for(const e of endStopsById.get(s.stop_id)||[]){const endOrigin=ends.find(x=>x.route_id===e.route_id);if(e.route_id!==s.route_id&&endOrigin&&e.stop_sequence<endOrigin.stop_sequence){const first=starts.find(x=>x.route_id===s.route_id)?.transport_routes;const second=ends.find(x=>x.route_id===e.route_id)?.transport_routes;if(first&&second)transfers.push({legs:[{route:first,from:origin.name,to:s.transport_stops.name,stops:s.stop_sequence-(starts.find(x=>x.route_id===s.route_id)?.stop_sequence||0)},{route:second,from:s.transport_stops.name,to:dest.name,stops:endOrigin.stop_sequence-e.stop_sequence}],transfers:1})}}}
-   const all=[...direct,...transfers].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,6);
-   if(!all.length){setDataInfo("No matching imported route chain was found. This does not prove no service exists; the current feed may cover buses only.");}
+   for(const row of startPaths.data||[]){
+    const start=startByTrip.get(row.trip_id);if(!start||row.stop_sequence<=start.stop_sequence)continue;
+    for(const next of endsByStop.get(row.stop_id)||[]){
+     const firstRoute=start.scheduled_trips.route_id,secondTrip=endByTripFull.get(next.trip_id);
+     const secondRoute=secondTrip?.scheduled_trips?.route_id;
+     if(!secondRoute||firstRoute===secondRoute)continue;
+     transfers.push({legs:[
+      {routeId:firstRoute,tripId:row.trip_id,from:origin.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence},
+      {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:dest.name,stops:secondTrip.stop_sequence-next.stop_sequence}
+     ],transfers:1});
+    }
+   }
+   const unique=new Map();
+   for(const j of [...direct,...transfers]){const k=j.legs.map(l=>l.tripId+":"+l.from+":"+l.to).join("|");if(!unique.has(k))unique.set(k,j)}
+   const all=[...unique.values()].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,6);
+   if(!all.length){setDataInfo("No active imported trip path was found for these stops. The current community feed may not include this journey or service date.");}
    else{
-    const routeIds=[...new Set(all.flatMap(j=>j.legs.map(l=>l.route.id)))];
-    const fares=await supabase.from("transport_fare_rules").select("route_id,transport_fare_products!inner(price,currency)").in("route_id",routeIds).limit(100);
-    const fareByRoute=new Map();for(const f of fares.data||[]){if(!fareByRoute.has(f.route_id))fareByRoute.set(f.route_id,[]);fareByRoute.get(f.route_id).push(f.transport_fare_products)}
-    for(const j of all){j.minutes=j.legs.reduce((n,l)=>n+Math.max(4,l.stops*3),0)+(j.transfers?8:0);j.fare=j.legs.map(l=>estimateFare(fareByRoute.get(l.route.id))).join(" + ")}
-    setJourneys(all);setDataInfo("Route paths use imported GTFS stop sequences. Duration is a rough planning estimate (3 min per stop + transfer buffer), not a published timetable or live ETA."); 
+    const routeIds=[...new Set(all.flatMap(j=>j.legs.map(l=>l.routeId)))];
+    const [routeResult,fareResult]=await Promise.all([
+     supabase.from("transport_routes").select("id,operator_id,route_short_name,route_long_name,mode").in("id",routeIds),
+     supabase.from("transport_fare_rules").select("route_id,transport_fare_products!inner(price,currency)").in("route_id",routeIds).limit(100)
+    ]);
+    if(routeResult.error)throw new Error(routeResult.error.message);
+    const routeById=new Map((routeResult.data||[]).map(x=>[x.id,x]));
+    const fareByRoute=new Map();for(const f of fareResult.data||[]){if(!fareByRoute.has(f.route_id))fareByRoute.set(f.route_id,[]);fareByRoute.get(f.route_id).push(f.transport_fare_products)}
+    for(const j of all){j.legs=j.legs.map(l=>({...l,route:routeById.get(l.routeId)})).filter(l=>l.route);j.minutes=j.legs.reduce((n,l)=>n+Math.max(4,l.stops*3),0)+(j.transfers?8:0);j.fare=j.legs.map(l=>estimateFare(fareByRoute.get(l.route.id))).join(" + ")}
+    setJourneys(all.filter(j=>j.legs.length));setDataInfo("Route paths come from active GTFS trip stop sequences. Duration is an indicative estimate (3 min per stop + transfer buffer), not an operator-published timetable or live ETA. Fares appear only when the feed supplies fare rules.");
    }
   }catch(e){setError(e.message||"Could not calculate routes.")}finally{setBusy(false)}
  }
