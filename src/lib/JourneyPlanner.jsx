@@ -1,13 +1,31 @@
 import React,{useEffect,useState} from "react";
-import {ArrowRight,Bus,Train,MapPin,Navigation,Search,Clock3,Wallet,RefreshCw} from "lucide-react";
+import {ArrowRight,Bus,Train,MapPin,Navigation,Search,Clock3,Wallet,RefreshCw,LocateFixed} from "lucide-react";
 import {hasSupabase,supabase} from "./supabase";
 import AITravelAssistant from "./AITravelAssistant.jsx";
 const modeName={bus:"Bus",suburban_rail:"Local train",metro:"Metro",ferry:"Ferry",other:"Transit"};
 const minsBetween=(start,end)=>{if(!start||!end)return null;const toMins=s=>{const [h,m,sec]=s.split(":").map(Number);return h*60+m+(sec||0)/60};let n=toMins(end)-toMins(start);if(n<0)n+=1440;return n>0&&n<360?Math.round(n):null};
-function StopPicker({label,value,onChange,onSelect,placeholder}){
+async function geocodeIndia(query,limit=5){
+ const url="https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=in&addressdetails=1&limit="+limit+"&q="+encodeURIComponent(query);
+ const response=await fetch(url,{headers:{"Accept-Language":"en"}});
+ if(!response.ok)throw new Error("Place suggestions are temporarily unavailable.");
+ return (await response.json()).map(x=>({id:null,name:x.name||x.display_name.split(",")[0],lat:Number(x.lat),lng:Number(x.lon),label:x.display_name,source:"place"}));
+}
+function StopPicker({label,value,onChange,onSelect,placeholder,onUseLocation,locationBusy}){
  const [hits,setHits]=useState([]),[open,setOpen]=useState(false),[loading,setLoading]=useState(false);
- useEffect(()=>{if(value?.id||value.trim().length<2){setHits([]);return}const timer=setTimeout(async()=>{if(!hasSupabase)return;setLoading(true);const {data}=await supabase.rpc("mumove_search_stops",{search_term:value.trim(),result_limit:8});setHits(data||[]);setOpen(true);setLoading(false)},250);return()=>clearTimeout(timer)},[value]);
- return <div className="stop-picker"><label>{label}</label><div className="planner-input"><MapPin size={17}/><input value={value?.name||value} onChange={e=>onChange(e.target.value)} onFocus={()=>setOpen(true)} placeholder={placeholder}/>{loading&&<RefreshCw size={15} className="spin"/>}</div>{open&&hits.length>0&&<div className="stop-suggestions">{hits.map(s=><button type="button" key={s.id} onClick={()=>{onSelect(s);setOpen(false)}}><b>{s.name}</b><small>{modeName[s.stop_type==="bus_stop"?"bus":s.stop_type==="rail_station"?"suburban_rail":s.stop_type==="metro_station"?"metro":"other"]} · {s.operator_id}</small></button>)}</div>}</div>
+ useEffect(()=>{
+  const query=String(value||"").trim();if(query.length<2){setHits([]);return}
+  const timer=setTimeout(async()=>{
+   setLoading(true);
+   try{
+    const results=[];
+    if(hasSupabase){const {data}=await supabase.rpc("mumove_search_stops",{search_term:query,result_limit:6});(data||[]).forEach(s=>results.push({...s,source:"stop"}))}
+    if(query.length>=3){try{const places=await geocodeIndia(query,4);places.forEach(p=>{if(!results.some(s=>s.name?.toLowerCase()===p.name.toLowerCase()))results.push(p)})}catch{}}
+    setHits(results);setOpen(true);
+   }finally{setLoading(false)}
+  },650);
+  return()=>clearTimeout(timer);
+ },[value]);
+ return <div className="stop-picker"><label>{label}</label><div className="planner-input"><MapPin size={17}/><input value={value?.name||value||""} onChange={e=>onChange(e.target.value)} onFocus={()=>setOpen(true)} placeholder={placeholder}/>{loading&&<RefreshCw size={15} className="spin"/>}<button type="button" className="planner-location-button" onClick={onUseLocation} aria-label="Use current location" disabled={locationBusy}><LocateFixed size={16}/></button></div>{open&&hits.length>0&&<div className="stop-suggestions">{hits.map((s,i)=><button type="button" key={s.id||s.label||i} onClick={()=>{onSelect(s);setOpen(false)}}><b>{s.name}</b><small>{s.source==="stop"?(modeName[s.stop_type==="bus_stop"?"bus":s.stop_type==="rail_station"?"suburban_rail":s.stop_type==="metro_station"?"metro":"other"]+" · "+(s.operator_id||"Imported stop")):(s.label||"Place in India")+" · place search"}</small></button>)}</div>}</div>
 }
 
 function getStaticGuide(from,to){
@@ -31,13 +49,13 @@ export default function JourneyPlanner(){
   setBusy(true);setError("");setJourneys([]);setGuide(null);setDataInfo("");
   try{
    const [a,b]=await Promise.all([
-    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",origin.id).limit(300),
-    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",dest.id).limit(300)
+    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",originStop.id).limit(300),
+    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",destStop.id).limit(300)
    ]);
    if(a.error||b.error)throw new Error(a.error?.message||b.error?.message);
    const starts=a.data||[],ends=b.data||[],endByTrip=new Map(ends.map(x=>[x.trip_id,x]));
    const direct=starts.filter(x=>endByTrip.has(x.trip_id)&&endByTrip.get(x.trip_id).stop_sequence>x.stop_sequence).map(x=>({
-    legs:[{routeId:x.scheduled_trips.route_id,tripId:x.trip_id,from:origin.name,to:dest.name,stops:endByTrip.get(x.trip_id).stop_sequence-x.stop_sequence,durationMinutes:minsBetween(x.departure_time,endByTrip.get(x.trip_id).arrival_time)}],transfers:0
+    legs:[{routeId:x.scheduled_trips.route_id,tripId:x.trip_id,from:originStop.name,to:destStop.name,stops:endByTrip.get(x.trip_id).stop_sequence-x.stop_sequence,durationMinutes:minsBetween(x.departure_time,endByTrip.get(x.trip_id).arrival_time)}],transfers:0
    }));
    const startTripIds=[...new Set(starts.map(x=>x.trip_id))].slice(0,150);
    const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,150);
@@ -80,11 +98,11 @@ export default function JourneyPlanner(){
    }
   }catch(e){setError(e.message||"Could not calculate routes.")}finally{setBusy(false)}
  }
- return <><div className="panel planner-panel journey-planner"><div className="panel-heading"><div><b>Find a connected journey</b><small>Bus timetable results plus indicative local-train / metro guidance</small></div><span className="status-tag">GTFS-backed</span></div>
- <StopPicker label="FROM" value={from} onChange={v=>{setFrom(v);setOrigin(null)}} onSelect={s=>{setOrigin(s);setFrom(s.name)}} placeholder="Search stop or station (e.g. Andheri)"/>
- <StopPicker label="TO" value={to} onChange={v=>{setTo(v);setDest(null)}} onSelect={s=>{setDest(s);setTo(s.name)}} placeholder="Search destination (e.g. Dadar)"/>
+ return <><div className="panel planner-panel journey-planner"><div className="panel-heading"><div><b>Find a connected journey</b><small>Search places across India · routes depend on imported operator data</small></div><span className="status-tag">GTFS-backed</span></div>
+ <StopPicker label="FROM" value={from} onChange={v=>{setFrom(v);setOrigin(null)}} onSelect={s=>{setOrigin(s);setFrom(s.name)}} onUseLocation={useCurrentLocation} locationBusy={locationBusy} placeholder="Search any place in India"/>
+ <StopPicker label="TO" value={to} onChange={v=>{setTo(v);setDest(null)}} onSelect={s=>{setDest(s);setTo(s.name)}} onUseLocation={()=>{}} placeholder="Search destination anywhere in India"/>
  <button className="button primary full" onClick={plan} disabled={busy||!origin||!dest}>{busy?<RefreshCw className="spin" size={16}/>:<Navigation size={16}/>} Find journeys</button>
- {error&&<div className="notice">{error}</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
+ {error&&<div className="notice">{error}</div>}{origin?.matchedFrom&&<div className="planner-note">Nearest imported stop to {origin.matchedFrom}: {origin.name} ({origin.distance.toFixed(1)} km away).</div>}{dest?.matchedFrom&&<div className="planner-note">Nearest imported stop to {dest.matchedFrom}: {dest.name} ({dest.distance.toFixed(1)} km away).</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
  {journeys.map((j,i)=><article className="journey-result" key={i}><div className="journey-top"><b>{j.transfers===0?"Direct journey":"1 transfer"}</b><span><Clock3 size={14}/> ~{j.minutes} min</span></div>{j.legs.map((l,n)=><div className="journey-leg" key={n}><span className="row-icon">{l.route.mode==="bus"?<Bus size={18}/>:<Train size={18}/>}</span><div><b>{modeName[l.route.mode]} · {l.route.route_short_name||l.route.route_long_name}</b><small>{l.from} → {l.to}</small></div></div>)}<div className="journey-foot"><span><Wallet size={14}/> {j.fare}</span><small>Fare shown only when GTFS publishes it</small></div></article>)}
  {!journeys.length&&!dataInfo&&<div className="planner-note">Import the public Mumbai GTFS schedule first. Timetables, live arrivals and operator fares are shown only when the source publishes them.</div>}
  </div><AITravelAssistant/></>
