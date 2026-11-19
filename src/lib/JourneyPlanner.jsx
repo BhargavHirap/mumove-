@@ -47,7 +47,7 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
  useEffect(()=>{if(initialOrigin){setFrom(initialOrigin);setOrigin(null)}},[initialOrigin]);
  useEffect(()=>{if(initialDestination){setTo(initialDestination);setDest(null)}},[initialDestination]);
  async function resolveEndpoint(value){
-  if(value?.id)return value;
+  if(value?.id)return {...value,candidates:[value]};
   let point=value?.lat!=null?value:null;
   if(!point&&String(value||"").trim().toLowerCase()==="my location"&&!currentLocation)throw new Error("Tap the location button and allow location access, or enter a starting place.");
   if(!point&&String(value||"").trim().toLowerCase()==="my location"&&currentLocation)point={...currentLocation,name:"My location"};
@@ -56,9 +56,10 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
   const dLat=3/111.32,dLng=3/(111.32*Math.max(.2,Math.cos(point.lat*Math.PI/180)));
   const {data,error}=await supabase.from("transport_stops").select("id,name,stop_type,operator_id,latitude,longitude").gte("latitude",point.lat-dLat).lte("latitude",point.lat+dLat).gte("longitude",point.lng-dLng).lte("longitude",point.lng+dLng).limit(1000);
   if(error)throw error;
-  const nearest=(data||[]).map(s=>({...s,lat:Number(s.latitude),lng:Number(s.longitude),distance:Math.hypot((Number(s.latitude)-point.lat)*111.32,(Number(s.longitude)-point.lng)*111.32*Math.cos(point.lat*Math.PI/180))})).filter(s=>Number.isFinite(s.distance)).sort((x,y)=>x.distance-y.distance)[0];
-  if(!nearest||nearest.distance>3)throw new Error("No imported MUMOVE transport stop was found within 3 km of "+(point.name||"this place")+". MUMOVE will not snap your journey to a distant stop. Public-transport journeys are available only in areas where verified operator timetable feeds have been imported.");
-  return {...nearest,name:nearest.name,matchedFrom:point.name||value?.name||value,distance:nearest.distance};
+  const nearby=(data||[]).map(s=>({...s,lat:Number(s.latitude),lng:Number(s.longitude),distance:Math.hypot((Number(s.latitude)-point.lat)*111.32,(Number(s.longitude)-point.lng)*111.32*Math.cos(point.lat*Math.PI/180))})).filter(s=>Number.isFinite(s.distance)&&s.distance<=3).sort((x,y)=>x.distance-y.distance);
+  const nearest=nearby[0];
+  if(!nearest)throw new Error("No imported MUMOVE transport stop was found within 3 km of "+(point.name||"this place")+". MUMOVE will not snap your journey to a distant stop. Public-transport journeys are available only in areas where verified operator timetable feeds have been imported.");
+  return {...nearest,name:nearest.name,matchedFrom:point.name||value?.name||value,distance:nearest.distance,candidates:nearby.slice(0,20)};
  }
  function useCurrentLocation(){
   if(!navigator.geolocation){setError("Location is not supported by this browser.");return}
@@ -74,43 +75,58 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
    const originStop=await resolveEndpoint(origin||from);
    const destStop=await resolveEndpoint(dest||to);
    setOrigin(originStop);setDest(destStop);setFrom(originStop.name);setTo(destStop.name);
+   const originIds=(originStop.candidates||[originStop]).map(s=>s.id).filter(Boolean);
+   const destinationIds=(destStop.candidates||[destStop]).map(s=>s.id).filter(Boolean);
    const [a,b]=await Promise.all([
-    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",originStop.id).limit(300),
-    supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",destStop.id).limit(300)
+    supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time),transport_stops!inner(name,latitude,longitude)").in("stop_id",originIds).limit(1500),
+    supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time),transport_stops!inner(name,latitude,longitude)").in("stop_id",destinationIds).limit(1500)
    ]);
    if(a.error||b.error)throw new Error(a.error?.message||b.error?.message);
-   const starts=a.data||[],ends=b.data||[],endByTrip=new Map(ends.map(x=>[x.trip_id,x]));
-   const direct=starts.filter(x=>endByTrip.has(x.trip_id)&&endByTrip.get(x.trip_id).stop_sequence>x.stop_sequence).map(x=>{
-    const end=endByTrip.get(x.trip_id);
-    const path=([]).concat([]); 
-    return {legs:[{routeId:x.scheduled_trips.route_id,tripId:x.trip_id,from:originStop.name,to:destStop.name,stops:end.stop_sequence-x.stop_sequence,durationMinutes:minsBetween(x.departure_time,end.arrival_time)}],transfers:0};
-   });
-   const startTripIds=[...new Set(starts.map(x=>x.trip_id))].slice(0,150);
-   const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,150);
+   const starts=a.data||[],ends=b.data||[];
+   const endsByTrip=new Map();
+   for(const row of ends){if(!endsByTrip.has(row.trip_id))endsByTrip.set(row.trip_id,[]);endsByTrip.get(row.trip_id).push(row)}
+   const direct=[];
+   for(const start of starts){
+    for(const end of endsByTrip.get(start.trip_id)||[]){
+     if(end.stop_sequence<=start.stop_sequence)continue;
+     direct.push({legs:[{routeId:start.scheduled_trips.route_id,tripId:start.trip_id,from:start.transport_stops.name,to:end.transport_stops.name,stops:end.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,end.arrival_time),startSequence:start.stop_sequence,endSequence:end.stop_sequence}],transfers:0});
+    }
+   }
+   const startTripIds=[...new Set(starts.map(x=>x.trip_id))].slice(0,250);
+   const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,250);
    const [startPaths,endPaths]=await Promise.all([
     startTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",startTripIds).limit(12000):Promise.resolve({data:[]}),
-    endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
+    endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
    ]);
    if(startPaths.error||endPaths.error)throw new Error(startPaths.error?.message||endPaths.error?.message);
-   const startByTrip=new Map(starts.map(x=>[x.trip_id,x])),endByTripFull=new Map(ends.map(x=>[x.trip_id,x]));
-   const endsByStop=new Map();
-   for(const row of endPaths.data||[]){const end=endByTripFull.get(row.trip_id);if(!end||row.stop_sequence>=end.stop_sequence)continue;if(!endsByStop.has(row.stop_id))endsByStop.set(row.stop_id,[]);endsByStop.get(row.stop_id).push(row)}
-   const startRowsByTrip=new Map(),endRowsByTrip=new Map();
+   const startsByTrip=new Map(),endsByTripFull=new Map(),startRowsByTrip=new Map(),endRowsByTrip=new Map();
+   for(const row of starts){if(!startsByTrip.has(row.trip_id))startsByTrip.set(row.trip_id,[]);startsByTrip.get(row.trip_id).push(row)}
+   for(const row of ends){if(!endsByTripFull.has(row.trip_id))endsByTripFull.set(row.trip_id,[]);endsByTripFull.get(row.trip_id).push(row)}
    for(const row of startPaths.data||[]){if(!startRowsByTrip.has(row.trip_id))startRowsByTrip.set(row.trip_id,[]);startRowsByTrip.get(row.trip_id).push(row)}
    for(const row of endPaths.data||[]){if(!endRowsByTrip.has(row.trip_id))endRowsByTrip.set(row.trip_id,[]);endRowsByTrip.get(row.trip_id).push(row)}
    const coordsFor=(rows,lo,hi)=>rows.filter(r=>r.stop_sequence>=lo&&r.stop_sequence<=hi).map(r=>[Number(r.transport_stops.latitude),Number(r.transport_stops.longitude)]).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
-   for(const j of direct){const l=j.legs[0],s=startByTrip.get(l.tripId),e=endByTripFull.get(l.tripId);l.path=coordsFor(startRowsByTrip.get(l.tripId)||[],s.stop_sequence,e.stop_sequence)}
+   for(const j of direct){const l=j.legs[0];l.path=coordsFor(startRowsByTrip.get(l.tripId)||[],l.startSequence,l.endSequence)}
+   const endsByStop=new Map();
+   for(const row of endPaths.data||[]){
+    for(const end of endsByTripFull.get(row.trip_id)||[]){
+     if(end.stop_sequence<=row.stop_sequence)continue;
+     if(!endsByStop.has(row.stop_id))endsByStop.set(row.stop_id,[]);
+     endsByStop.get(row.stop_id).push({...row,end});
+    }
+   }
    const transfers=[];
-   for(const row of startPaths.data||[]){
-    const start=startByTrip.get(row.trip_id);if(!start||row.stop_sequence<=start.stop_sequence)continue;
-    for(const next of endsByStop.get(row.stop_id)||[]){
-     const firstRoute=start.scheduled_trips.route_id,secondTrip=endByTripFull.get(next.trip_id);
-     const secondRoute=secondTrip?.scheduled_trips?.route_id;
-     if(!secondRoute||firstRoute===secondRoute)continue;
-     transfers.push({legs:[
-      {routeId:firstRoute,tripId:row.trip_id,from:originStop.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,row.arrival_time),path:coordsFor(startRowsByTrip.get(row.trip_id)||[],start.stop_sequence,row.stop_sequence)},
-      {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:destStop.name,stops:secondTrip.stop_sequence-next.stop_sequence,durationMinutes:minsBetween(next.departure_time,secondTrip.arrival_time),path:coordsFor(endRowsByTrip.get(next.trip_id)||[],next.stop_sequence,secondTrip.stop_sequence)}
-     ],transfers:1});
+   for(const start of starts){
+    for(const row of startRowsByTrip.get(start.trip_id)||[]){
+     if(row.stop_sequence<=start.stop_sequence)continue;
+     for(const next of endsByStop.get(row.stop_id)||[]){
+      if(next.trip_id===start.trip_id)continue;
+      const firstRoute=start.scheduled_trips.route_id,secondRoute=next.end.scheduled_trips.route_id;
+      if(!secondRoute||firstRoute===secondRoute)continue;
+      transfers.push({legs:[
+       {routeId:firstRoute,tripId:start.trip_id,from:start.transport_stops.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,row.arrival_time),path:coordsFor(startRowsByTrip.get(start.trip_id)||[],start.stop_sequence,row.stop_sequence)},
+       {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:next.end.transport_stops.name,stops:next.end.stop_sequence-next.stop_sequence,durationMinutes:minsBetween(next.departure_time,next.end.arrival_time),path:coordsFor(endRowsByTrip.get(next.trip_id)||[],next.stop_sequence,next.end.stop_sequence)}
+      ],transfers:1});
+     }
     }
    }
    const unique=new Map();
@@ -135,7 +151,7 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
  <StopPicker label="FROM" value={from} onChange={v=>{setFrom(v);setOrigin(null)}} onSelect={s=>{setOrigin(s);setFrom(s.name)}} onUseLocation={useCurrentLocation} locationBusy={locationBusy} placeholder="Search any place in India"/>
  <StopPicker label="TO" value={to} onChange={v=>{setTo(v);setDest(null)}} onSelect={s=>{setDest(s);setTo(s.name)}} onUseLocation={()=>{}} placeholder="Search destination anywhere in India"/>
  <button className="button primary full" onClick={plan} disabled={busy||!from.trim()||!to.trim()}>{busy?<RefreshCw className="spin" size={16}/>:<Navigation size={16}/>} Find journeys</button>
- {error&&<div className="notice">{error}</div>}{origin?.matchedFrom&&<div className="planner-note">Nearest imported stop to {origin.matchedFrom}: {origin.name} ({origin.distance.toFixed(1)} km away).</div>}{dest?.matchedFrom&&<div className="planner-note">Nearest imported stop to {dest.matchedFrom}: {dest.name} ({dest.distance.toFixed(1)} km away).</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
+ {error&&<div className="notice">{error}</div>}{origin?.matchedFrom&&<div className="planner-note">Searching nearby stops around {origin.matchedFrom}; closest: {origin.name} ({origin.distance.toFixed(1)} km).</div>}{dest?.matchedFrom&&<div className="planner-note">Searching nearby stops around {dest.matchedFrom}; closest: {dest.name} ({dest.distance.toFixed(1)} km).</div>}{dataInfo&&<div className="notice">{dataInfo}</div>}{guide&&<article className="journey-result" style={{marginTop:14}}><div className="journey-top"><b>{guide.title}</b><span><Clock3 size={14}/> {guide.time}</span></div><div style={{display:"grid",gap:12,marginTop:14}}>{guide.steps.map((step,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}><span style={{display:"grid",placeItems:"center",minWidth:25,height:25,borderRadius:20,background:"var(--soft, #eef2f5)",fontWeight:700}}>{i+1}</span><span>{step}</span></div>)}</div><div className="notice" style={{marginTop:14}}>{guide.note}</div><div className="journey-foot"><span>Indicative route guide · not GTFS-verified</span><small>Check official operator updates before travel</small></div></article>}
  {journeys.length>0&&<JourneyRoutesMap journeys={journeys}/>} {journeys.map((j,i)=><article className="journey-result" key={i}><div className="journey-top"><b>GTFS option {i+1} · {j.transfers===0?"Direct":"1 transfer"}</b><span><Clock3 size={14}/> ~{j.minutes} min</span></div>{j.legs.map((l,n)=><div className="journey-leg" key={n}><span className="row-icon">{l.route.mode==="bus"?<Bus size={18}/>:<Train size={18}/>}</span><div><b>{modeName[l.route.mode]} · {l.route.route_short_name||l.route.route_long_name}</b><small>{l.from} → {l.to}</small></div></div>)}<div className="journey-foot"><span><Wallet size={14}/> {j.fare}</span><small>Fare shown only when GTFS publishes it</small></div></article>)}
  {!journeys.length&&!dataInfo&&<div className="planner-note">Import the public Mumbai GTFS schedule first. Timetables, live arrivals and operator fares are shown only when the source publishes them.</div>}
  </div><AITravelAssistant/></>
