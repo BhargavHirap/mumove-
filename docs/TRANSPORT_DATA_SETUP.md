@@ -20,6 +20,14 @@ From a trusted local terminal:
 
 Never put the service-role key in a VITE_ variable, commit it or paste it into source code. Rerun the importer when the upstream feed is refreshed.
 
+## Run the import from a phone (no laptop required)
+
+A manual GitHub Actions workflow is included at Actions → Import Mumbai GTFS data → Run workflow. Before running it, open repository Settings → Secrets and variables → Actions and add:
+- SUPABASE_URL = the MUMOVE Supabase project URL.
+- SUPABASE_SERVICE_ROLE_KEY = the project's service-role/secret key.
+
+Then open the Actions tab on GitHub, select Import Mumbai GTFS data, tap Run workflow, and wait for the job to finish. The importer downloads the feed on the GitHub runner and writes validated records to Supabase. Keep the service key only in GitHub Actions Secrets; never paste it into chat or source code.
+
 ## Vercel environment variables
 
 Set these in Project Settings → Environment Variables, then redeploy:
