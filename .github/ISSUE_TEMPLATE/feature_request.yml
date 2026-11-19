@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an improvement to MUMOVE
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What commuter problem would this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature or workflow.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Journey planning
+        - Public transport data
+        - Maps and nearby stops
+        - Accessibility
+        - Community reports
+        - Language and AI assistance
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Data sources or references
+      description: If the idea needs transport data, link the publisher and note any known licence or access conditions.
+    validations:
+      required: false
