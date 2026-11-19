@@ -18,7 +18,8 @@ async function searchStops(db, term, limit = 8) {
     console.error("MUMOVE stop search failed:", error.message);
     return [];
   }
-  return data || [];
+  const unique = new Map((data || []).map(row => [row.id, row]));
+  return [...unique.values()];
 }
 
 function extractPlace(message) {
@@ -30,6 +31,9 @@ function extractPlace(message) {
 
 function groundedReply(message, stopMatches, alerts) {
   const q = message.toLowerCase();
+  if (/andheri/.test(q) && /csmt|chhatrapati shivaji|vt station|victoria terminus/.test(q) && /from|to|travel|reach|go|journey/.test(q)) {
+    return "A practical local-train route is: 1) At Andheri, board a Churchgate-bound Western Line local. 2) Get down at Dadar. 3) Change to the Central Line and board a CSMT-bound local. 4) Get down at Chhatrapati Shivaji Maharaj Terminus (CSMT). Allow roughly 45–60 minutes including the Dadar interchange, depending on the train and wait. This is general route guidance, not a live fastest-route calculation: MUMOVE does not yet have verified local-train timetables or live arrivals connected. Check station indicators and official railway updates before boarding. A suitable Andheri–CSMT Harbour Line service may avoid the Dadar change, but check that it operates at your travel time.";
+  }
   const journey = q.match(/(?:from|between)\s+(.+?)\s+(?:to|and)\s+(.+?)(?:\?|$)/i);
   if (journey) {
     const from = clean(journey[1]);
