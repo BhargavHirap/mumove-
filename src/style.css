@@ -148,3 +148,37 @@ body{color:#2C365A!important}
  .home-service-icon{grid-row:span 2;margin:0}
  .home-services b{align-self:end}.home-services small{align-self:start}
 }
+
+
+/* Phase 1.2 — India-wide place search and mobile journey planner */
+.planner-panel .planner-input{position:relative;gap:9px;padding-right:8px}
+.planner-panel .planner-input input{min-width:0;flex:1}
+.planner-location-button{width:34px;height:34px;flex:none;border:0;border-radius:10px;background:#EEE8DF;color:#2C365A;display:grid;place-items:center}
+.planner-location-button:disabled{opacity:.5}
+.planner-panel .stop-picker{margin:17px 0}
+.planner-panel .stop-picker>label{color:#77766F;font-size:9px;letter-spacing:1.4px;font-weight:800}
+.planner-panel .stop-suggestions{background:#F8F5F0;border:1px solid #C4BCB0;box-shadow:0 12px 28px #2C365A18;max-height:250px}
+.planner-panel .stop-suggestions button{color:#2C365A;border-bottom:1px solid #E5DED4;padding:12px 13px}
+.planner-panel .stop-suggestions button:active{background:#EEE8DF}
+.planner-panel .stop-suggestions button small{color:#77766F;line-height:1.4}
+.planner-panel .journey-result{background:#F8F5F0;border:1px solid #C4BCB0;border-radius:16px;padding:15px}
+.planner-panel .journey-top>b{color:#2C365A;font-size:13px}
+.planner-panel .journey-top>span{color:#65745F;font-weight:750}
+.planner-panel .journey-leg{border-color:#E5DED4}
+.planner-panel .journey-leg>div b{color:#2C365A}
+.planner-panel .journey-leg>div small{color:#77766F}
+.planner-panel .journey-foot{flex-wrap:wrap}
+.planner-panel .journey-foot>span{color:#65745F}
+.planner-panel .journey-foot small{color:#77766F}
+.planner-panel .planner-note{background:#EEE8DF;color:#555A65}
+@media(max-width:600px){
+ .journey-planner{padding:15px!important}
+ .journey-planner .panel-heading{align-items:flex-start}
+ .journey-planner .panel-heading>span{font-size:8px}
+ .planner-panel .planner-input{height:50px;margin:7px 0}
+ .planner-panel .stop-suggestions{max-height:210px}
+ .planner-panel .journey-top{align-items:flex-start}
+ .planner-panel .journey-top>span{white-space:nowrap}
+ .planner-panel .journey-foot{align-items:flex-start;gap:7px}
+ .planner-panel .journey-foot small{text-align:left}
+}
