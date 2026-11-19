@@ -52,7 +52,7 @@ export default function JourneyPlanner(){
    const unique=new Map();
    for(const j of [...direct,...transfers]){const k=j.legs.map(l=>l.tripId+":"+l.from+":"+l.to).join("|");if(!unique.has(k))unique.set(k,j)}
    const all=[...unique.values()].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,6);
-   if(!all.length){setDataInfo("No active imported trip path was found for these stops. The current community feed may not include this journey or service date.");}
+   if(!all.length){setDataInfo("No matching bus trip was found between these stops in the imported static timetable. This planner currently searches bus trips only; it cannot yet calculate a combined bus + local train + metro journey. Try two bus stops, or check the operator timetable for the selected travel date.");}
    else{
     const routeIds=[...new Set(all.flatMap(j=>j.legs.map(l=>l.routeId)))];
     const [routeResult,fareResult]=await Promise.all([
