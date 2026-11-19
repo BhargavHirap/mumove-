@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible problem in MUMOVE
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please avoid posting passwords, API keys, personal information or private travel details.
+  - type: input
+    id: page
+    attributes:
+      label: Page or feature
+      description: Where did the problem happen?
+      placeholder: Journey planner / nearby stops / map
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open ... 2. Enter ... 3. Tap ..."
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: Android / Chrome, Windows / Firefox, etc.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or logs
+      description: Remove personal information and secrets before sharing.
+    validations:
+      required: false
