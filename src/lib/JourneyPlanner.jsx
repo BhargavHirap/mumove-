@@ -69,6 +69,10 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
   if(!from.trim()||!to.trim()){setError("Enter both a starting point and destination.");return}
   setBusy(true);setError("");setJourneys([]);setGuide(null);setDataInfo("");
   try{
+   // Resolve typed places to nearby imported stops, or keep a stop selected from suggestions.
+   // This is the bridge between India-wide map search and the currently imported transit feeds.
+   const originStop=await resolveEndpoint(origin||from);
+   const destStop=await resolveEndpoint(dest||to);
    setOrigin(originStop);setDest(destStop);setFrom(originStop.name);setTo(destStop.name);
    const [a,b]=await Promise.all([
     supabase.from("trip_stop_times").select("trip_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time)").eq("stop_id",originStop.id).limit(300),
@@ -104,14 +108,14 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
      const secondRoute=secondTrip?.scheduled_trips?.route_id;
      if(!secondRoute||firstRoute===secondRoute)continue;
      transfers.push({legs:[
-      {routeId:firstRoute,tripId:row.trip_id,from:origin.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,row.arrival_time),path:coordsFor(startRowsByTrip.get(row.trip_id)||[],start.stop_sequence,row.stop_sequence)},
-      {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:dest.name,stops:secondTrip.stop_sequence-next.stop_sequence,durationMinutes:minsBetween(next.departure_time,secondTrip.arrival_time),path:coordsFor(endRowsByTrip.get(next.trip_id)||[],next.stop_sequence,secondTrip.stop_sequence)}
+      {routeId:firstRoute,tripId:row.trip_id,from:originStop.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,row.arrival_time),path:coordsFor(startRowsByTrip.get(row.trip_id)||[],start.stop_sequence,row.stop_sequence)},
+      {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:destStop.name,stops:secondTrip.stop_sequence-next.stop_sequence,durationMinutes:minsBetween(next.departure_time,secondTrip.arrival_time),path:coordsFor(endRowsByTrip.get(next.trip_id)||[],next.stop_sequence,secondTrip.stop_sequence)}
      ],transfers:1});
     }
    }
    const unique=new Map();
    for(const j of [...direct,...transfers]){const k=j.legs.map(l=>l.tripId+":"+l.from+":"+l.to).join("|");if(!unique.has(k))unique.set(k,j)}
-   const all=[...unique.values()].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,6);
+   const all=[...unique.values()].sort((x,y)=>x.transfers-y.transfers||x.legs.reduce((n,l)=>n+l.stops,0)-y.legs.reduce((n,l)=>n+l.stops,0)).slice(0,8);
    if(!all.length){const fallback=getStaticGuide(originStop,destStop);setGuide(fallback);setDataInfo(fallback?"No matching bus trip was found in the imported static bus timetable. Here is a separate, indicative rail/metro route guide for this pair.":"No matching bus trip was found in the imported static bus timetable, and MUMOVE has no verified rail/metro route for this exact pair yet. Try nearby station names. Live arrivals are not connected.");}
    else{
     const routeIds=[...new Set(all.flatMap(j=>j.legs.map(l=>l.routeId)))];
