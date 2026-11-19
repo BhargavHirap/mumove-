@@ -11,6 +11,16 @@ const transferPossible=(arrival,departure)=>{
  let wait=toMins(departure)-toMins(arrival);if(wait<0)wait+=1440;
  return wait>=8&&wait<=90;
 };
+async function fetchPaged(queryFactory,maxRows=20000,pageSize=1000){
+ const rows=[];
+ for(let offset=0;offset<maxRows;offset+=pageSize){
+  const {data,error}=await queryFactory().range(offset,offset+pageSize-1);
+  if(error)return {data:null,error};
+  const page=data||[];rows.push(...page);
+  if(page.length<pageSize)break;
+ }
+ return {data:rows,error:null};
+}
 async function geocodeIndia(query,limit=5){
  const url="https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=in&addressdetails=1&limit="+limit+"&q="+encodeURIComponent(query);
  const response=await fetch(url,{headers:{"Accept-Language":"en"}});
@@ -84,8 +94,8 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
    const originIds=(originStop.candidates||[originStop]).map(s=>s.id).filter(Boolean);
    const destinationIds=(destStop.candidates||[destStop]).map(s=>s.id).filter(Boolean);
    const [a,b]=await Promise.all([
-    supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time),transport_stops!inner(name,latitude,longitude)").in("stop_id",originIds).limit(1500),
-    supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time),transport_stops!inner(name,latitude,longitude)").in("stop_id",destinationIds).limit(1500)
+    fetchPaged(()=>supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time),transport_stops!inner(name,latitude,longitude)").in("stop_id",originIds).order("trip_id").order("stop_sequence"),10000),
+    fetchPaged(()=>supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,departure_time,arrival_time,scheduled_trips!inner(route_id,departure_time,arrival_time),transport_stops!inner(name,latitude,longitude)").in("stop_id",destinationIds).order("trip_id").order("stop_sequence"),10000)
    ]);
    if(a.error||b.error)throw new Error(a.error?.message||b.error?.message);
    const starts=a.data||[],ends=b.data||[];
@@ -101,8 +111,8 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
    const startTripIds=[...new Set(starts.map(x=>x.trip_id))].slice(0,250);
    const endTripIds=[...new Set(ends.map(x=>x.trip_id))].slice(0,250);
    const [startPaths,endPaths]=await Promise.all([
-    startTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",startTripIds).limit(12000):Promise.resolve({data:[]}),
-    endTripIds.length?supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",endTripIds).limit(12000):Promise.resolve({data:[]})
+    startTripIds.length?fetchPaged(()=>supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",startTripIds).order("trip_id").order("stop_sequence"),20000):Promise.resolve({data:[],error:null}),
+    endTripIds.length?fetchPaged(()=>supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",endTripIds).order("trip_id").order("stop_sequence"),20000):Promise.resolve({data:[],error:null})
    ]);
    if(startPaths.error||endPaths.error)throw new Error(startPaths.error?.message||endPaths.error?.message);
    const startsByTrip=new Map(),endsByTripFull=new Map(),startRowsByTrip=new Map(),endRowsByTrip=new Map();
@@ -148,12 +158,12 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
    const firstTransferStopIds=[...firstLegsByStop.keys()].slice(0,250);
    const twoTransfers=[];
    if(firstTransferStopIds.length){
-    const midStartResult=await supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,scheduled_trips!inner(route_id),transport_stops!inner(name,latitude,longitude)").in("stop_id",firstTransferStopIds).limit(8000);
+    const midStartResult=await fetchPaged(()=>supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,scheduled_trips!inner(route_id),transport_stops!inner(name,latitude,longitude)").in("stop_id",firstTransferStopIds).order("trip_id").order("stop_sequence"),8000);
     if(midStartResult.error)throw new Error(midStartResult.error.message);
     const midStarts=midStartResult.data||[];
     const midTripIds=[...new Set(midStarts.map(x=>x.trip_id))].slice(0,120);
     if(midTripIds.length){
-     const midPathResult=await supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",midTripIds).limit(12000);
+     const midPathResult=await fetchPaged(()=>supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",midTripIds).order("trip_id").order("stop_sequence"),12000);
      if(midPathResult.error)throw new Error(midPathResult.error.message);
      const midRowsByTrip=new Map();
      for(const row of midPathResult.data||[]){if(!midRowsByTrip.has(row.trip_id))midRowsByTrip.set(row.trip_id,[]);midRowsByTrip.get(row.trip_id).push(row)}
