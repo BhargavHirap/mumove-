@@ -61,7 +61,7 @@ export default function App() {
   const visible=useMemo(()=>reports.filter(r=>(filter==="All updates"||r.category===filter)&&(!query||r.station.toLowerCase().includes(query.toLowerCase()))),[reports,filter,query]);
   const currentStation=stations.find(s=>s.name.startsWith(station))||stations[0];
   const latestFor=category=>reports.filter(r=>r.station===station&&r.category===category).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
-  const from=places.find(p=>p.name===origin)||places[0], to=places.find(p=>p.name===destination)||places[7];
+  const from=origin==="My location"&&location?location:(places.find(p=>p.name===origin)||places[0]), to=places.find(p=>p.name===destination)||places[7];
   const km=distanceKm(from,to)*1.22;
   const routes=[
     {id:"train",name:"Train + walk",detail:"Public transport · indicative",icon:TrainFront,fare:Math.max(5,Math.round(km*1.15/5)*5),time:Math.max(12,Math.round(km*3.2+10)),tag:"Budget friendly"},
