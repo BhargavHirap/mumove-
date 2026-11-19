@@ -1,6 +1,11 @@
 name: Import Mumbai GTFS data
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/import-mumbai-gtfs.mjs"
+      - ".github/workflows/import-mumbai-gtfs.yml"
   workflow_dispatch:
     inputs:
       feed_url:
