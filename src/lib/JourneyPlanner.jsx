@@ -5,6 +5,12 @@ import AITravelAssistant from "./AITravelAssistant.jsx";
 import JourneyRoutesMap from "./JourneyRoutesMap.jsx";
 const modeName={bus:"Bus",suburban_rail:"Local train",metro:"Metro",ferry:"Ferry",other:"Transit"};
 const minsBetween=(start,end)=>{if(!start||!end)return null;const toMins=s=>{const [h,m,sec]=s.split(":").map(Number);return h*60+m+(sec||0)/60};let n=toMins(end)-toMins(start);if(n<0)n+=1440;return n>0&&n<360?Math.round(n):null};
+const transferPossible=(arrival,departure)=>{
+ if(!arrival||!departure)return false;
+ const toMins=s=>{const [h,m,sec]=s.split(":").map(Number);return h*60+m+(sec||0)/60};
+ let wait=toMins(departure)-toMins(arrival);if(wait<0)wait+=1440;
+ return wait>=8&&wait<=90;
+};
 async function geocodeIndia(query,limit=5){
  const url="https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=in&addressdetails=1&limit="+limit+"&q="+encodeURIComponent(query);
  const response=await fetch(url,{headers:{"Accept-Language":"en"}});
@@ -121,7 +127,7 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
      for(const next of endsByStop.get(row.stop_id)||[]){
       if(next.trip_id===start.trip_id)continue;
       const firstRoute=start.scheduled_trips.route_id,secondRoute=next.end.scheduled_trips.route_id;
-      if(!secondRoute||firstRoute===secondRoute)continue;
+      if(!secondRoute||firstRoute===secondRoute||!transferPossible(row.arrival_time,next.departure_time))continue;
       transfers.push({legs:[
        {routeId:firstRoute,tripId:start.trip_id,from:start.transport_stops.name,to:row.transport_stops.name,stops:row.stop_sequence-start.stop_sequence,durationMinutes:minsBetween(start.departure_time,row.arrival_time),path:coordsFor(startRowsByTrip.get(start.trip_id)||[],start.stop_sequence,row.stop_sequence)},
        {routeId:secondRoute,tripId:next.trip_id,from:row.transport_stops.name,to:next.end.transport_stops.name,stops:next.end.stop_sequence-next.stop_sequence,durationMinutes:minsBetween(next.departure_time,next.end.arrival_time),path:coordsFor(endRowsByTrip.get(next.trip_id)||[],next.stop_sequence,next.end.stop_sequence)}
@@ -149,20 +155,19 @@ export default function JourneyPlanner({initialOrigin="",initialDestination="",c
     if(midTripIds.length){
      const midPathResult=await supabase.from("trip_stop_times").select("trip_id,stop_id,stop_sequence,arrival_time,departure_time,transport_stops!inner(name,latitude,longitude)").in("trip_id",midTripIds).limit(12000);
      if(midPathResult.error)throw new Error(midPathResult.error.message);
-     const midStartsByTrip=new Map(),midRowsByTrip=new Map();
-     for(const row of midStarts){if(!midStartsByTrip.has(row.trip_id))midStartsByTrip.set(row.trip_id,[]);midStartsByTrip.get(row.trip_id).push(row)}
+     const midRowsByTrip=new Map();
      for(const row of midPathResult.data||[]){if(!midRowsByTrip.has(row.trip_id))midRowsByTrip.set(row.trip_id,[]);midRowsByTrip.get(row.trip_id).push(row)}
      for(const midStart of midStarts){
       const firstOptions=firstLegsByStop.get(midStart.stop_id)||[];
       if(!firstOptions.length)continue;
       for(const first of firstOptions){
-       if(first.start.trip_id===midStart.trip_id||first.routeId===midStart.scheduled_trips.route_id)continue;
+       if(first.start.trip_id===midStart.trip_id||first.routeId===midStart.scheduled_trips.route_id||!transferPossible(first.transfer.arrival_time,midStart.departure_time))continue;
        for(const midRow of midRowsByTrip.get(midStart.trip_id)||[]){
         if(midRow.stop_sequence<=midStart.stop_sequence)continue;
         for(const last of endsByStop.get(midRow.stop_id)||[]){
          const finalRoute=last.end.scheduled_trips.route_id;
          if(!finalRoute||last.trip_id===midStart.trip_id||last.trip_id===first.start.trip_id)continue;
-         if(finalRoute===midStart.scheduled_trips.route_id||finalRoute===first.routeId)continue;
+         if(finalRoute===midStart.scheduled_trips.route_id||finalRoute===first.routeId||!transferPossible(midRow.arrival_time,last.departure_time))continue;
          twoTransfers.push({legs:[
           {routeId:first.routeId,tripId:first.start.trip_id,from:first.start.transport_stops.name,to:first.transfer.transport_stops.name,stops:first.transfer.stop_sequence-first.start.stop_sequence,durationMinutes:minsBetween(first.start.departure_time,first.transfer.arrival_time),path:coordsFor(startRowsByTrip.get(first.start.trip_id)||[],first.start.stop_sequence,first.transfer.stop_sequence)},
           {routeId:midStart.scheduled_trips.route_id,tripId:midStart.trip_id,from:midStart.transport_stops.name,to:midRow.transport_stops.name,stops:midRow.stop_sequence-midStart.stop_sequence,durationMinutes:minsBetween(midStart.departure_time,midRow.arrival_time),path:coordsFor(midRowsByTrip.get(midStart.trip_id)||[],midStart.stop_sequence,midRow.stop_sequence)},
